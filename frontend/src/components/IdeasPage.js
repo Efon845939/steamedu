@@ -14,6 +14,7 @@ import axios from 'axios';
 import { toast } from 'sonner';
 import { subjectEmoji, subjectBadgeColor, formatApiError } from '../lib/steam';
 import { Heart, MessageSquare, Star } from 'lucide-react';
+import { notifyNewBadges } from '../lib/badges';
 
 const IdeasPage = () => {
   const { user, API } = useContext(AuthContext);
@@ -76,7 +77,7 @@ const IdeasPage = () => {
     if (!newIdea.title.trim() || !newIdea.description.trim() || !newIdea.category) return;
     setSubmitting(true);
     try {
-      await axios.post(`${API}/ideas`, {
+      const res = await axios.post(`${API}/ideas`, {
         title: newIdea.title.trim(),
         description: newIdea.description.trim(),
         category: newIdea.category,
@@ -84,6 +85,7 @@ const IdeasPage = () => {
       setNewIdea({ title: '', description: '', category: '' });
       setIsDialogOpen(false);
       toast.success('Idea shared with the community! 💡');
+      notifyNewBadges(res.data.new_badges);
       fetchIdeas();
     } catch (error) {
       toast.error(formatApiError(error.response?.data?.detail));

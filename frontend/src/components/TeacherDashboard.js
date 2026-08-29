@@ -14,6 +14,7 @@ import axios from 'axios';
 import { toast } from 'sonner';
 import { SUBJECTS, AGE_GROUPS, formatApiError } from '../lib/steam';
 import { BadgeCheck, Trophy, MessageCircle, Users } from 'lucide-react';
+import { TeacherAnnouncements } from './TeacherAnnouncements';
 
 const TeacherDashboard = ({ stats, refreshStats }) => {
   const { user, setUser, API } = useContext(AuthContext);
@@ -276,6 +277,10 @@ const TeacherDashboard = ({ stats, refreshStats }) => {
               </form>
             </DialogContent>
           </Dialog>
+        </div>
+
+        <div className="mb-8">
+          <TeacherAnnouncements studentsCount={students.length} />
         </div>
 
         <div className="grid lg:grid-cols-2 gap-8 mb-8">

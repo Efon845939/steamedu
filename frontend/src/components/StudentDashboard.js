@@ -11,6 +11,9 @@ import { subjectEmoji, formatApiError, firstName } from '../lib/steam';
 import { Flame, Star, Trophy, MessageCircle, Award, CheckCircle2 } from 'lucide-react';
 import { WeeklyRecap } from './WeeklyRecap';
 import { CertificateModal } from './CertificateModal';
+import { BadgesCard } from './BadgesCard';
+import { StudentAnnouncements } from './StudentAnnouncements';
+import { notifyNewBadges } from '../lib/badges';
 
 const StudentDashboard = ({ stats, refreshStats }) => {
   const { user, API } = useContext(AuthContext);
@@ -18,6 +21,7 @@ const StudentDashboard = ({ stats, refreshStats }) => {
   const [challenges, setChallenges] = useState([]);
   const [certificates, setCertificates] = useState([]);
   const [selectedCert, setSelectedCert] = useState(null);
+  const [badgeKey, setBadgeKey] = useState(0);
 
   const fetchExtras = async () => {
     try {
@@ -40,6 +44,8 @@ const StudentDashboard = ({ stats, refreshStats }) => {
     try {
       const res = await axios.post(`${API}/challenges/${challenge.id}/complete`);
       toast.success(`Challenge complete! +${res.data.points_earned} points 🎉`);
+      notifyNewBadges(res.data.new_badges);
+      setBadgeKey((k) => k + 1);
       fetchExtras();
       refreshStats();
     } catch (e) {
@@ -125,14 +131,20 @@ const StudentDashboard = ({ stats, refreshStats }) => {
               <div className="text-2xl font-bold text-orange-600" data-testid="ideas-shared-stat">
                 {stats.ideas_shared} <span className="text-sm font-normal text-gray-500">ideas</span>
               </div>
-              <p className="text-xs text-muted-foreground">{stats.certificates} certificate{stats.certificates !== 1 && 's'} won</p>
+              <p className="text-xs text-muted-foreground">
+                {stats.certificates} certificate{stats.certificates !== 1 && 's'} • {stats.badges_earned}/{stats.badges_total} badges
+              </p>
             </CardContent>
           </Card>
         </div>
 
         <WeeklyRecap />
 
+        <BadgesCard reloadKey={badgeKey} />
+
         <div className="grid lg:grid-cols-2 gap-8 mb-8">
+          <StudentAnnouncements />
+
           {/* Daily Challenges */}
           <Card className="bg-white/70 backdrop-blur-sm" data-testid="daily-challenges-card">
             <CardHeader>
@@ -179,6 +191,9 @@ const StudentDashboard = ({ stats, refreshStats }) => {
             </CardContent>
           </Card>
 
+        </div>
+
+        <div className="mb-8">
           {/* Quick Actions */}
           <Card className="bg-white/70 backdrop-blur-sm">
             <CardHeader>
@@ -188,7 +203,7 @@ const StudentDashboard = ({ stats, refreshStats }) => {
               </CardTitle>
               <CardDescription>Jump into your learning activities</CardDescription>
             </CardHeader>
-            <CardContent className="grid grid-cols-2 gap-3">
+            <CardContent className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
               <Link to="/quiz"><Button className="w-full justify-start bg-emerald-600 hover:bg-emerald-700" data-testid="take-quiz-btn">📝 Quizzes</Button></Link>
               <Link to="/activities"><Button variant="outline" className="w-full justify-start border-purple-600 text-purple-600 hover:bg-purple-50" data-testid="explore-activities-btn">🎯 Activities</Button></Link>
               <Link to="/contests"><Button variant="outline" className="w-full justify-start border-amber-600 text-amber-600 hover:bg-amber-50" data-testid="contests-btn"><Trophy className="w-4 h-4 mr-2" />Contests</Button></Link>

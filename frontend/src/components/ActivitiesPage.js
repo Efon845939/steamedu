@@ -9,6 +9,7 @@ import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { subjectEmoji, difficultyColor } from '../lib/steam';
+import { notifyNewBadges } from '../lib/badges';
 
 const ActivitiesPage = () => {
   const { user, API } = useContext(AuthContext);
@@ -100,6 +101,7 @@ const ActivitiesPage = () => {
       if (res.data.first_completion) {
         toast.success(`Activity complete! +${res.data.points_earned} points ⭐`);
       }
+      notifyNewBadges(res.data.new_badges);
     } catch (e) {
       console.error('Failed to save activity result:', e);
     }

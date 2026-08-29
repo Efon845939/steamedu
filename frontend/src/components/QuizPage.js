@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import axios from 'axios';
 import { toast } from 'sonner';
 import { SUBJECTS, subjectEmoji, subjectBadgeColor } from '../lib/steam';
+import { notifyNewBadges } from '../lib/badges';
 
 const QuizPage = () => {
   const { id } = useParams();
@@ -83,6 +84,7 @@ const QuizPage = () => {
       if (response.data.challenge_completed) {
         toast.success(`Daily challenge "${response.data.challenge_completed}" completed! 🔥`);
       }
+      notifyNewBadges(response.data.new_badges);
     } catch (error) {
       console.error('Failed to submit quiz:', error);
       toast.error('Failed to submit quiz');

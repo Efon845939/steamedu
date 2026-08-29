@@ -35,6 +35,8 @@ Interactive STEM/STEAM-focused educational web platform for high school–colleg
 - Tournaments: POST/GET /api/tournaments, join, submit (one-shot), GET /api/certificates/me
 - Leaderboards: GET /api/leaderboard/students?age_group=&subject=, GET /api/leaderboard/teachers
 - Ideas: GET/POST /api/ideas, GET /api/ideas/{id}, POST like (toggle), POST comments
+- Badges: GET /api/badges (all 12 with earned/progress), GET /api/badges/user/{id}
+- Announcements: POST /api/announcements (teacher), GET /api/announcements (role-aware), GET /api/announcements/unread-count, POST /api/announcements/{id}/read, DELETE /api/announcements/{id}
 - Seed: POST /api/seed-data (TEACHER role required, idempotent)
 
 ## Points System
@@ -45,6 +47,8 @@ Quiz first attempt = score pts • Activity first completion = 50 pts • Challe
 - **2026-06 (session 2)**: FULL V2 — roles/teacher code/age groups, real progress + points + streaks, chat + mentorship, daily challenges, contests + certificates + verification, student & teacher leaderboards, fair likes + idea comments + detail page, 27 real content items with external links, per-area Content Hub with age filters, simplified navbar, role-based dashboards. Tested 58/58 backend + 9/9 E2E (iteration_4).
 - **2026-06 (session 2, security audit)**: Rotated JWT secret to high-entropy value; login brute-force lockout (5 fails/5min per username+IP → 429); registration rate limit (50/10min/IP); server-side password min length; regex-escaped user search (ReDoS); CORS allow_credentials off for wildcard; demo-account seeding behind SEED_DEMO_ACCOUNTS env flag; /api/seed-data now teacher-only.
 - **2026-06 (session 2, V3 features)**: Printable certificates (styled modal + Print/Save-as-PDF via print CSS); Weekly Recap ("Your Week in Review" card, /api/stats/weekly powered by new point_events log with reasons); Idea Teacher Spotlight (one Teacher's Pick per teacher, pin/unpin, Teacher's Picks section on Ideas page); renamed Tournaments → **Contests** everywhere in UI with a Contests link in the navbar (/contests route, /tournaments redirects; API routes unchanged). **Tested: 79/79 backend (21 new + 58 regression), all E2E flows pass (iteration_5)**. Post-test: tie-aware ranking display unified with submit rank.
+
+- **2026-06 (session 3, V4 features)**: **Class Announcements** — teachers broadcast one message to all their students (create dialog, per-announcement read counters `x/N read`, confirm-dialog delete that purges read receipts; student feed with unread highlight + "Mark read", `/api/announcements/unread-count`). **Badge Collection** — 12 data-driven badges (First Quiz, Quiz Machine 10 quizzes, Perfect Score 100%, Hands On, 7/30-Day Streak, 100/500/1000 Points, Idea Spark, Teacher's Pick, Contest Champion) awarded via `evaluate_badges()` on quiz/activity/challenge/contest/idea/spotlight events, "My Badges" grid on the student dashboard (earned in colour + date, locked with lock icon + real progress), toast on unlock, `badges_earned`/`badges_total` in /api/stats/me. Mongo indexes added for announcements/announcement_reads/user_badges. **Tested: 34 new backend tests + regression pass, full E2E teacher & student flows pass (iteration_6)**. Post-test fixes: POST /api/ideas now returns `new_badges` (toast), unread-count counts unread recipient rows, teacher list read-counts via single aggregation, delete confirmation dialog.
 
 ## Backlog
 - **P2**: Contest detail deep-linking (URL per contest); vertical centering of quiz/activity result cards; remove matched items from left DnD column instead of greying

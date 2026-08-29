@@ -144,6 +144,11 @@ class ChallengeCreate(BaseModel):
     points: int = 20
 
 
+class AnnouncementCreate(BaseModel):
+    title: str
+    body: str
+
+
 class TournamentCreate(BaseModel):
     title: str
     description: str = ""
@@ -234,6 +239,71 @@ async def check_teacher_verification(teacher_id: str):
     challenges = await db.challenges.count_documents({"teacher_id": teacher_id})
     if students >= VERIFY_MIN_STUDENTS and challenges >= VERIFY_MIN_CHALLENGES:
         await db.users.update_one({"id": teacher_id, "verified": False}, {"$set": {"verified": True}})
+
+
+# ---------------- Badges ----------------
+BADGE_DEFS = [
+    {"key": "first_quiz", "name": "First Quiz", "description": "Complete your first quiz",
+     "icon": "BookCheck", "metric": "quizzes", "goal": 1, "color": "emerald"},
+    {"key": "ten_quizzes", "name": "Quiz Machine", "description": "Complete 10 different quizzes",
+     "icon": "Layers", "metric": "quizzes", "goal": 10, "color": "teal"},
+    {"key": "perfect_score", "name": "Perfect Score", "description": "Score 100% on any quiz",
+     "icon": "Target", "metric": "best_score", "goal": 100, "color": "rose"},
+    {"key": "first_activity", "name": "Hands On", "description": "Finish your first interactive activity",
+     "icon": "Puzzle", "metric": "activities", "goal": 1, "color": "purple"},
+    {"key": "streak_7", "name": "7 Day Streak", "description": "Stay active 7 days in a row",
+     "icon": "Flame", "metric": "streak", "goal": 7, "color": "orange"},
+    {"key": "streak_30", "name": "30 Day Streak", "description": "Stay active 30 days in a row",
+     "icon": "CalendarCheck", "metric": "streak", "goal": 30, "color": "red"},
+    {"key": "points_100", "name": "100 Points", "description": "Earn your first 100 points",
+     "icon": "Star", "metric": "points", "goal": 100, "color": "yellow"},
+    {"key": "points_500", "name": "500 Points", "description": "Earn 500 points in total",
+     "icon": "Sparkles", "metric": "points", "goal": 500, "color": "amber"},
+    {"key": "points_1000", "name": "1000 Points", "description": "Earn 1000 points in total",
+     "icon": "Crown", "metric": "points", "goal": 1000, "color": "indigo"},
+    {"key": "first_idea", "name": "Idea Spark", "description": "Share your first idea with the community",
+     "icon": "Lightbulb", "metric": "ideas", "goal": 1, "color": "lime"},
+    {"key": "teachers_pick", "name": "Teacher's Pick", "description": "Get one of your ideas spotlighted by a teacher",
+     "icon": "BadgeCheck", "metric": "spotlights", "goal": 1, "color": "sky"},
+    {"key": "contest_champion", "name": "Contest Champion", "description": "Win a contest and earn a certificate",
+     "icon": "Trophy", "metric": "certificates", "goal": 1, "color": "amber"},
+]
+
+
+async def _badge_metrics(user_id: str) -> dict:
+    user = await db.users.find_one({"id": user_id})
+    attempts = await db.quiz_attempts.find({"user_id": user_id}, {"_id": 0, "quiz_id": 1, "score": 1}).to_list(2000)
+    results = await db.activity_results.find({"user_id": user_id}, {"_id": 0, "activity_id": 1}).to_list(2000)
+    ideas = await db.ideas.find({"author_id": user_id}, {"_id": 0, "spotlight": 1}).to_list(500)
+    certificates = await db.certificates.count_documents({"student_id": user_id})
+    return {
+        "quizzes": len({a["quiz_id"] for a in attempts}),
+        "best_score": max([a["score"] for a in attempts], default=0),
+        "activities": len({r["activity_id"] for r in results}),
+        "streak": (user or {}).get("streak_days", 0),
+        "points": (user or {}).get("points", 0),
+        "ideas": len(ideas),
+        "spotlights": len([i for i in ideas if i.get("spotlight")]),
+        "certificates": certificates,
+    }
+
+
+async def evaluate_badges(user_id: str) -> List[dict]:
+    """Awards any newly earned badges and returns the new ones."""
+    metrics = await _badge_metrics(user_id)
+    earned_keys = {b["key"] for b in await db.user_badges.find({"user_id": user_id}, {"_id": 0, "key": 1}).to_list(100)}
+    new_badges = []
+    for d in BADGE_DEFS:
+        if d["key"] in earned_keys:
+            continue
+        if metrics.get(d["metric"], 0) >= d["goal"]:
+            await db.user_badges.insert_one({
+                "id": str(uuid.uuid4()), "user_id": user_id, "key": d["key"],
+                "earned_at": datetime.now(timezone.utc).isoformat(),
+            })
+            new_badges.append({"key": d["key"], "name": d["name"], "description": d["description"],
+                               "icon": d["icon"], "color": d["color"]})
+    return new_badges
 
 
 def age_group_query(age_group: Optional[str]) -> dict:
@@ -394,8 +464,10 @@ async def submit_quiz_attempt(quiz_id: str, attempt_data: dict, current_user: Us
             challenge_completed = ch["title"]
 
     attempt.pop("_id", None)
+    new_badges = await evaluate_badges(current_user.id)
     return {**attempt, "points_earned": points_earned, "streak_days": streak,
-            "first_attempt": first_attempt, "challenge_completed": challenge_completed}
+            "first_attempt": first_attempt, "challenge_completed": challenge_completed,
+            "new_badges": new_badges}
 
 
 # ---------------- Activities ----------------
@@ -424,7 +496,9 @@ async def complete_activity(activity_id: str, completion: ActivityCompletion, cu
     points = ACTIVITY_POINTS if first else 0
     await award_points(current_user.id, points, "activity")
     streak = await touch_streak(current_user.id)
-    return {"points_earned": points, "streak_days": streak, "first_completion": first}
+    new_badges = await evaluate_badges(current_user.id)
+    return {"points_earned": points, "streak_days": streak, "first_completion": first,
+            "new_badges": new_badges}
 
 
 # ---------------- Content ----------------
@@ -448,11 +522,12 @@ async def get_content_item(content_id: str):
 
 
 # ---------------- Ideas ----------------
-@api_router.post("/ideas", response_model=IdeaShare)
+@api_router.post("/ideas")
 async def create_idea(idea_data: IdeaShareCreate, current_user: User = Depends(get_current_user)):
     idea = IdeaShare(**idea_data.dict(), author_id=current_user.id, author_name=current_user.full_name)
     await db.ideas.insert_one(idea.dict())
-    return idea
+    new_badges = await evaluate_badges(current_user.id)
+    return {**idea.dict(), "new_badges": new_badges}
 
 
 @api_router.get("/ideas")
@@ -493,6 +568,7 @@ async def spotlight_idea(idea_id: str, current_user: User = Depends(require_teac
     sp = {"teacher_id": current_user.id, "teacher_name": current_user.full_name,
           "at": datetime.now(timezone.utc).isoformat()}
     await db.ideas.update_one({"id": idea_id}, {"$set": {"spotlight": sp}})
+    await evaluate_badges(idea["author_id"])
     return {"spotlighted": True, "spotlight": sp}
 
 
@@ -694,6 +770,7 @@ async def _full_student_stats(user: dict) -> dict:
 
     ideas = await db.ideas.count_documents({"author_id": uid})
     certs = await db.certificates.count_documents({"student_id": uid})
+    badges_earned = await db.user_badges.count_documents({"user_id": uid})
     recent = sorted(base["attempts"], key=lambda a: str(a.get("completed_at", "")), reverse=True)[:5]
     fresh = await db.users.find_one({"id": uid})
 
@@ -703,6 +780,7 @@ async def _full_student_stats(user: dict) -> dict:
         "avg_score": avg_score,
         "activities_completed": len(done_acts), "total_activities": len(act_ids),
         "ideas_shared": ideas, "certificates": certs, "progress": progress,
+        "badges_earned": badges_earned, "badges_total": len(BADGE_DEFS),
         "subject_progress": subject_progress,
         "recent_attempts": [{"quiz_title": a.get("quiz_title", "Quiz"), "score": a["score"], "completed_at": str(a.get("completed_at", ""))} for a in recent],
         "teacher_name": fresh.get("teacher_name"), "age_group": ag,
@@ -840,7 +918,8 @@ async def complete_challenge(challenge_id: str, current_user: User = Depends(get
     })
     await award_points(current_user.id, ch.get("points", 20), "challenge")
     streak = await touch_streak(current_user.id)
-    return {"points_earned": ch.get("points", 20), "streak_days": streak}
+    new_badges = await evaluate_badges(current_user.id)
+    return {"points_earned": ch.get("points", 20), "streak_days": streak, "new_badges": new_badges}
 
 
 # ---------------- Tournaments ----------------
@@ -871,6 +950,7 @@ async def _finalize_tournament(t: dict):
             "awarded_at": datetime.now(timezone.utc).isoformat(),
         })
         await award_points(winner["student_id"], TOURNAMENT_WIN_BONUS, "contest_win")
+        await evaluate_badges(winner["student_id"])
     await db.tournaments.update_one({"id": t["id"]}, {"$set": update})
     return {**t, **update}
 
@@ -990,12 +1070,121 @@ async def submit_tournament(tournament_id: str, attempt_data: dict, current_user
     streak = await touch_streak(current_user.id)
     better = await db.tournament_entries.count_documents(
         {"tournament_id": tournament_id, "score": {"$gt": score}})
-    return {"score": score, "rank": better + 1, "points_earned": TOURNAMENT_POINTS, "streak_days": streak}
+    new_badges = await evaluate_badges(current_user.id)
+    return {"score": score, "rank": better + 1, "points_earned": TOURNAMENT_POINTS,
+            "streak_days": streak, "new_badges": new_badges}
 
 
 @api_router.get("/certificates/me")
 async def get_my_certificates(current_user: User = Depends(get_current_user)):
     return await db.certificates.find({"student_id": current_user.id}, {"_id": 0}).sort("awarded_at", -1).to_list(100)
+
+
+# ---------------- Badges API ----------------
+@api_router.get("/badges")
+async def get_my_badges(current_user: User = Depends(get_current_user)):
+    await evaluate_badges(current_user.id)
+    metrics = await _badge_metrics(current_user.id)
+    earned = {b["key"]: b["earned_at"]
+              for b in await db.user_badges.find({"user_id": current_user.id}, {"_id": 0}).to_list(100)}
+    badges = []
+    for d in BADGE_DEFS:
+        value = metrics.get(d["metric"], 0)
+        badges.append({
+            **d,
+            "earned": d["key"] in earned,
+            "earned_at": earned.get(d["key"]),
+            "progress": min(value, d["goal"]),
+        })
+    return {"badges": badges, "earned_count": len(earned), "total": len(BADGE_DEFS)}
+
+
+@api_router.get("/badges/user/{user_id}")
+async def get_user_badges(user_id: str, current_user: User = Depends(get_current_user)):
+    target = await db.users.find_one({"id": user_id})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    earned = {b["key"] for b in await db.user_badges.find({"user_id": user_id}, {"_id": 0, "key": 1}).to_list(100)}
+    return {"user": safe_user(target),
+            "badges": [{"key": d["key"], "name": d["name"], "description": d["description"],
+                        "icon": d["icon"], "color": d["color"]} for d in BADGE_DEFS if d["key"] in earned],
+            "earned_count": len(earned), "total": len(BADGE_DEFS)}
+
+
+# ---------------- Class Announcements ----------------
+@api_router.post("/announcements")
+async def create_announcement(data: AnnouncementCreate, current_user: User = Depends(require_teacher)):
+    title = data.title.strip()
+    body = data.body.strip()
+    if not title or not body:
+        raise HTTPException(status_code=400, detail="Title and message are required")
+    students = await db.users.find({"teacher_id": current_user.id}, {"_id": 0, "id": 1}).to_list(500)
+    if not students:
+        raise HTTPException(status_code=400, detail="You have no students yet — add students via Chat first")
+    doc = {
+        "id": str(uuid.uuid4()), "teacher_id": current_user.id, "teacher_name": current_user.full_name,
+        "title": title, "body": body,
+        "recipient_ids": [s["id"] for s in students],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.announcements.insert_one(doc)
+    doc.pop("_id", None)
+    return {**doc, "recipients": len(students), "read_count": 0}
+
+
+@api_router.get("/announcements")
+async def list_announcements(current_user: User = Depends(get_current_user)):
+    if current_user.role == "teacher":
+        anns = await db.announcements.find({"teacher_id": current_user.id}, {"_id": 0}).sort("created_at", -1).to_list(100)
+        counts = {}
+        if anns:
+            cursor = db.announcement_reads.aggregate([
+                {"$match": {"announcement_id": {"$in": [a["id"] for a in anns]}}},
+                {"$group": {"_id": "$announcement_id", "count": {"$sum": 1}}},
+            ])
+            counts = {r["_id"]: r["count"] async for r in cursor}
+        return [{**a, "recipients": len(a.get("recipient_ids", [])),
+                 "read_count": counts.get(a["id"], 0)} for a in anns]
+    anns = await db.announcements.find({"recipient_ids": current_user.id}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    read_ids = {r["announcement_id"] for r in
+                await db.announcement_reads.find({"student_id": current_user.id}, {"_id": 0}).to_list(500)}
+    return [{**a, "recipient_ids": [], "read": a["id"] in read_ids} for a in anns]
+
+
+@api_router.get("/announcements/unread-count")
+async def unread_announcements(current_user: User = Depends(get_current_user)):
+    if current_user.role != "student":
+        return {"unread": 0}
+    read_ids = [r["announcement_id"] for r in
+                await db.announcement_reads.find({"student_id": current_user.id}, {"_id": 0, "announcement_id": 1}).to_list(1000)]
+    unread = await db.announcements.count_documents(
+        {"recipient_ids": current_user.id, "id": {"$nin": read_ids}})
+    return {"unread": unread}
+
+
+@api_router.post("/announcements/{announcement_id}/read")
+async def mark_announcement_read(announcement_id: str, current_user: User = Depends(get_current_user)):
+    ann = await db.announcements.find_one({"id": announcement_id})
+    if not ann or current_user.id not in ann.get("recipient_ids", []):
+        raise HTTPException(status_code=404, detail="Announcement not found")
+    if not await db.announcement_reads.find_one({"announcement_id": announcement_id, "student_id": current_user.id}):
+        await db.announcement_reads.insert_one({
+            "id": str(uuid.uuid4()), "announcement_id": announcement_id, "student_id": current_user.id,
+            "read_at": datetime.now(timezone.utc).isoformat(),
+        })
+    return {"read": True}
+
+
+@api_router.delete("/announcements/{announcement_id}")
+async def delete_announcement(announcement_id: str, current_user: User = Depends(require_teacher)):
+    ann = await db.announcements.find_one({"id": announcement_id})
+    if not ann:
+        raise HTTPException(status_code=404, detail="Announcement not found")
+    if ann["teacher_id"] != current_user.id:
+        raise HTTPException(status_code=403, detail="You can only delete your own announcements")
+    await db.announcements.delete_one({"id": announcement_id})
+    await db.announcement_reads.delete_many({"announcement_id": announcement_id})
+    return {"deleted": True}
 
 
 # ---------------- Leaderboards ----------------
@@ -1235,6 +1424,14 @@ app.add_middleware(
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+
+@app.on_event("startup")
+async def ensure_indexes():
+    await db.announcements.create_index("recipient_ids")
+    await db.announcements.create_index("teacher_id")
+    await db.announcement_reads.create_index([("announcement_id", 1), ("student_id", 1)], unique=True)
+    await db.user_badges.create_index([("user_id", 1), ("key", 1)], unique=True)
 
 
 @app.on_event("shutdown")

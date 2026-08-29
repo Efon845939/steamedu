@@ -6,6 +6,7 @@ import { Badge } from './ui/badge';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { subjectEmoji, subjectBadgeColor, formatApiError } from '../lib/steam';
+import { notifyNewBadges } from '../lib/badges';
 import { Trophy, BadgeCheck, Users, Clock, ArrowLeft } from 'lucide-react';
 
 const statusBadge = (status) => ({
@@ -79,6 +80,7 @@ const ContestsPage = () => {
       setResult(res.data);
       setTaking(false);
       toast.success(`Submitted! You scored ${res.data.score}% — currently rank #${res.data.rank} 🏆`);
+      notifyNewBadges(res.data.new_badges);
       fetchContests();
       openDetail(detail.id);
     } catch (e) {
