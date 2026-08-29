@@ -9,12 +9,15 @@ import axios from 'axios';
 import { toast } from 'sonner';
 import { subjectEmoji, formatApiError, firstName } from '../lib/steam';
 import { Flame, Star, Trophy, MessageCircle, Award, CheckCircle2 } from 'lucide-react';
+import { WeeklyRecap } from './WeeklyRecap';
+import { CertificateModal } from './CertificateModal';
 
 const StudentDashboard = ({ stats, refreshStats }) => {
   const { user, API } = useContext(AuthContext);
   const navigate = useNavigate();
   const [challenges, setChallenges] = useState([]);
   const [certificates, setCertificates] = useState([]);
+  const [selectedCert, setSelectedCert] = useState(null);
 
   const fetchExtras = async () => {
     try {
@@ -127,6 +130,8 @@ const StudentDashboard = ({ stats, refreshStats }) => {
           </Card>
         </div>
 
+        <WeeklyRecap />
+
         <div className="grid lg:grid-cols-2 gap-8 mb-8">
           {/* Daily Challenges */}
           <Card className="bg-white/70 backdrop-blur-sm" data-testid="daily-challenges-card">
@@ -186,7 +191,7 @@ const StudentDashboard = ({ stats, refreshStats }) => {
             <CardContent className="grid grid-cols-2 gap-3">
               <Link to="/quiz"><Button className="w-full justify-start bg-emerald-600 hover:bg-emerald-700" data-testid="take-quiz-btn">📝 Quizzes</Button></Link>
               <Link to="/activities"><Button variant="outline" className="w-full justify-start border-purple-600 text-purple-600 hover:bg-purple-50" data-testid="explore-activities-btn">🎯 Activities</Button></Link>
-              <Link to="/tournaments"><Button variant="outline" className="w-full justify-start border-amber-600 text-amber-600 hover:bg-amber-50" data-testid="tournaments-btn"><Trophy className="w-4 h-4 mr-2" />Tournaments</Button></Link>
+              <Link to="/contests"><Button variant="outline" className="w-full justify-start border-amber-600 text-amber-600 hover:bg-amber-50" data-testid="contests-btn"><Trophy className="w-4 h-4 mr-2" />Contests</Button></Link>
               <Link to="/leaderboard"><Button variant="outline" className="w-full justify-start border-blue-600 text-blue-600 hover:bg-blue-50" data-testid="leaderboard-btn">🏆 Leaderboard</Button></Link>
               <Link to="/chat"><Button variant="outline" className="w-full justify-start border-teal-600 text-teal-600 hover:bg-teal-50" data-testid="chat-btn"><MessageCircle className="w-4 h-4 mr-2" />Chat</Button></Link>
               <Link to="/content"><Button variant="outline" className="w-full justify-start border-green-600 text-green-600 hover:bg-green-50" data-testid="browse-content-btn">📚 Content</Button></Link>
@@ -231,17 +236,22 @@ const StudentDashboard = ({ stats, refreshStats }) => {
                 <Award className="w-6 h-6 text-amber-500" />
                 <span>My Certificates</span>
               </CardTitle>
-              <CardDescription>Win tournaments to earn certificates</CardDescription>
+              <CardDescription>Win contests to earn certificates — click one to print it</CardDescription>
             </CardHeader>
             <CardContent>
               {certificates.length === 0 ? (
                 <p className="text-gray-500 text-sm py-4 text-center">
-                  No certificates yet. Join a tournament and finish first! 🏆
+                  No certificates yet. Join a contest and finish first! 🏆
                 </p>
               ) : (
                 <div className="space-y-3">
                   {certificates.map((c) => (
-                    <div key={c.id} className="p-4 rounded-lg border-2 border-amber-300 bg-gradient-to-r from-amber-50 to-yellow-50" data-testid={`certificate-${c.id}`}>
+                    <button
+                      key={c.id}
+                      onClick={() => setSelectedCert(c)}
+                      className="w-full text-left p-4 rounded-lg border-2 border-amber-300 bg-gradient-to-r from-amber-50 to-yellow-50 hover:shadow-md transition-shadow"
+                      data-testid={`certificate-${c.id}`}
+                    >
                       <div className="flex items-center gap-2 mb-1">
                         <Trophy className="w-5 h-5 text-amber-500" />
                         <h4 className="font-bold text-sm text-amber-900">Champion — {c.tournament_title}</h4>
@@ -250,7 +260,8 @@ const StudentDashboard = ({ stats, refreshStats }) => {
                       <p className="text-xs text-amber-800">
                         {subjectEmoji(c.subject)} {c.subject} • Hosted by {c.teacher_name} • {new Date(c.awarded_at).toLocaleDateString()}
                       </p>
-                    </div>
+                      <p className="text-xs text-amber-600 font-semibold mt-1">🖨️ View & print certificate</p>
+                    </button>
                   ))}
                 </div>
               )}
@@ -284,6 +295,8 @@ const StudentDashboard = ({ stats, refreshStats }) => {
             </div>
           </CardContent>
         </Card>
+
+        <CertificateModal certificate={selectedCert} onClose={() => setSelectedCert(null)} />
       </div>
     </div>
   );

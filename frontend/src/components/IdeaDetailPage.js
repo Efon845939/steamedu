@@ -8,12 +8,12 @@ import { Badge } from './ui/badge';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { subjectEmoji, subjectBadgeColor, formatApiError } from '../lib/steam';
-import { ArrowLeft, Heart, Send, BadgeCheck } from 'lucide-react';
+import { ArrowLeft, Heart, Send, BadgeCheck, Star } from 'lucide-react';
 
 const IdeaDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { API } = useContext(AuthContext);
+  const { user, API } = useContext(AuthContext);
   const [idea, setIdea] = useState(null);
   const [commentText, setCommentText] = useState('');
   const [posting, setPosting] = useState(false);
@@ -36,6 +36,16 @@ const IdeaDetailPage = () => {
     try {
       const res = await axios.post(`${API}/ideas/${id}/like`);
       setIdea({ ...idea, likes: res.data.likes, liked: res.data.liked });
+    } catch (e) {
+      toast.error(formatApiError(e.response?.data?.detail));
+    }
+  };
+
+  const toggleSpotlight = async () => {
+    try {
+      const res = await axios.post(`${API}/ideas/${id}/spotlight`);
+      toast.success(res.data.spotlighted ? "Pinned as your Teacher's Pick! 🌟" : "Teacher's Pick removed");
+      fetchIdea();
     } catch (e) {
       toast.error(formatApiError(e.response?.data?.detail));
     }
@@ -74,17 +84,36 @@ const IdeaDetailPage = () => {
         <Card className="bg-white/90 backdrop-blur-sm shadow-xl mb-8" data-testid="idea-detail-card">
           <CardHeader>
             <div className="flex items-center justify-between mb-2">
-              <Badge className={subjectBadgeColor(idea.category)}>
-                {subjectEmoji(idea.category)} {idea.category}
-              </Badge>
-              <button
-                onClick={toggleLike}
-                className={`flex items-center space-x-1 transition-colors p-2 rounded-lg ${idea.liked ? 'text-red-500 bg-red-50' : 'text-gray-400 hover:text-red-500'}`}
-                data-testid="idea-detail-like-btn"
-              >
-                <Heart className={`w-6 h-6 ${idea.liked ? 'fill-red-500' : ''}`} />
-                <span className="font-semibold" data-testid="idea-detail-likes-count">{idea.likes}</span>
-              </button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge className={subjectBadgeColor(idea.category)}>
+                  {subjectEmoji(idea.category)} {idea.category}
+                </Badge>
+                {idea.spotlight && (
+                  <Badge className="bg-amber-200 text-amber-900" data-testid="idea-detail-spotlight-badge">
+                    🌟 Teacher's Pick by {idea.spotlight.teacher_name}
+                  </Badge>
+                )}
+              </div>
+              <div className="flex items-center gap-1">
+                {user?.role === 'teacher' && (
+                  <button
+                    onClick={toggleSpotlight}
+                    title={idea.spotlight?.teacher_id === user.id ? "Remove your Teacher's Pick" : "Pin as your Teacher's Pick"}
+                    className={`p-2 rounded-lg transition-colors ${idea.spotlight?.teacher_id === user.id ? 'text-amber-500 bg-amber-50' : 'text-gray-300 hover:text-amber-500'}`}
+                    data-testid="idea-detail-spotlight-btn"
+                  >
+                    <Star className={`w-6 h-6 ${idea.spotlight?.teacher_id === user.id ? 'fill-amber-500' : ''}`} />
+                  </button>
+                )}
+                <button
+                  onClick={toggleLike}
+                  className={`flex items-center space-x-1 transition-colors p-2 rounded-lg ${idea.liked ? 'text-red-500 bg-red-50' : 'text-gray-400 hover:text-red-500'}`}
+                  data-testid="idea-detail-like-btn"
+                >
+                  <Heart className={`w-6 h-6 ${idea.liked ? 'fill-red-500' : ''}`} />
+                  <span className="font-semibold" data-testid="idea-detail-likes-count">{idea.likes}</span>
+                </button>
+              </div>
             </div>
             <CardTitle className="text-3xl text-gray-900" data-testid="idea-detail-title">{idea.title}</CardTitle>
             <CardDescription>

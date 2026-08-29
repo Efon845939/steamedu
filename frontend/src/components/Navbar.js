@@ -43,6 +43,7 @@ const Navbar = () => {
       <NavLink to="/content" onClick={() => setIsMenuOpen(false)}>Content</NavLink>
       {user && <NavLink to="/dashboard" onClick={() => setIsMenuOpen(false)}>Dashboard</NavLink>}
       {user && <NavLink to="/ideas" onClick={() => setIsMenuOpen(false)}>Ideas</NavLink>}
+      {user && <NavLink to="/contests" onClick={() => setIsMenuOpen(false)}>Contests</NavLink>}
     </>
   );
 

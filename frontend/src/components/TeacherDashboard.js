@@ -74,7 +74,7 @@ const TeacherDashboard = ({ stats, refreshStats }) => {
         ...newTournament,
         duration_days: parseInt(newTournament.duration_days, 10) || 7,
       });
-      toast.success('Tournament created! 🏆');
+      toast.success('Contest created! 🏆');
       setTournamentOpen(false);
       setNewTournament({ title: '', description: '', subject: 'Science', age_group: 'all', scope: 'class', quiz_id: '', duration_days: 7 });
       fetchAll();
@@ -112,7 +112,7 @@ const TeacherDashboard = ({ stats, refreshStats }) => {
                 Get Your Verified Checkmark
               </CardTitle>
               <CardDescription>
-                Verified teachers can host open professional tournaments whose winners earn certificates.
+                Verified teachers can host open professional contests whose winners earn certificates.
               </CardDescription>
             </CardHeader>
             <CardContent className="grid sm:grid-cols-2 gap-6">
@@ -139,8 +139,8 @@ const TeacherDashboard = ({ stats, refreshStats }) => {
           {[
             { label: 'My Students', value: stats.students_count, emoji: '🎓', testid: 'students-count-stat' },
             { label: 'Challenges Created', value: stats.challenges_count, emoji: '🔥', testid: 'challenges-count-stat' },
-            { label: 'Tournaments Hosted', value: stats.tournaments_count, emoji: '🏆', testid: 'tournaments-count-stat' },
-            { label: 'Professional Tournaments', value: stats.pro_tournaments, emoji: '⭐', testid: 'pro-tournaments-stat' },
+            { label: 'Contests Hosted', value: stats.tournaments_count, emoji: '🏆', testid: 'tournaments-count-stat' },
+            { label: 'Professional Contests', value: stats.pro_tournaments, emoji: '⭐', testid: 'pro-tournaments-stat' },
           ].map((s) => (
             <Card key={s.label} className="bg-white/70 backdrop-blur-sm">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -208,15 +208,15 @@ const TeacherDashboard = ({ stats, refreshStats }) => {
 
           <Dialog open={tournamentOpen} onOpenChange={setTournamentOpen}>
             <DialogTrigger asChild>
-              <Button className="bg-amber-600 hover:bg-amber-700" data-testid="create-tournament-btn">🏆 Create Tournament</Button>
+              <Button className="bg-amber-600 hover:bg-amber-700" data-testid="create-tournament-btn">🏆 Create Contest</Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-[500px]">
               <DialogHeader>
-                <DialogTitle>Create a Tournament</DialogTitle>
+                <DialogTitle>Create a Contest</DialogTitle>
                 <DialogDescription>
                   {stats.verified
-                    ? 'As a verified teacher your tournaments are professional — winners earn certificates.'
-                    : 'Unverified teachers can host class tournaments for their own students only.'}
+                    ? 'As a verified teacher your contests are professional — winners earn certificates.'
+                    : 'Unverified teachers can host class contests for their own students only.'}
                 </DialogDescription>
               </DialogHeader>
               <form onSubmit={createTournament} className="space-y-4">
@@ -264,7 +264,7 @@ const TeacherDashboard = ({ stats, refreshStats }) => {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label>Tournament Quiz</Label>
+                  <Label>Contest Quiz</Label>
                   <Select value={newTournament.quiz_id} onValueChange={(v) => setNewTournament({ ...newTournament, quiz_id: v })}>
                     <SelectTrigger data-testid="tournament-quiz-select"><SelectValue placeholder="Pick the quiz students will compete on" /></SelectTrigger>
                     <SelectContent>
@@ -272,7 +272,7 @@ const TeacherDashboard = ({ stats, refreshStats }) => {
                     </SelectContent>
                   </Select>
                 </div>
-                <Button type="submit" className="w-full bg-amber-600 hover:bg-amber-700" disabled={!newTournament.quiz_id} data-testid="submit-tournament-btn">Create Tournament</Button>
+                <Button type="submit" className="w-full bg-amber-600 hover:bg-amber-700" disabled={!newTournament.quiz_id} data-testid="submit-tournament-btn">Create Contest</Button>
               </form>
             </DialogContent>
           </Dialog>
@@ -340,15 +340,15 @@ const TeacherDashboard = ({ stats, refreshStats }) => {
         {/* My tournaments */}
         <Card className="bg-white/70 backdrop-blur-sm" data-testid="my-tournaments-card">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Trophy className="w-6 h-6 text-amber-500" />My Tournaments</CardTitle>
+            <CardTitle className="flex items-center gap-2"><Trophy className="w-6 h-6 text-amber-500" />My Contests</CardTitle>
           </CardHeader>
           <CardContent>
             {tournaments.length === 0 ? (
-              <p className="text-gray-500 text-sm py-4 text-center">No tournaments yet.</p>
+              <p className="text-gray-500 text-sm py-4 text-center">No contests yet.</p>
             ) : (
               <div className="grid md:grid-cols-2 gap-4">
                 {tournaments.map((t) => (
-                  <Link key={t.id} to="/tournaments" className="block">
+                  <Link key={t.id} to="/contests" className="block">
                     <div className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
                       <div className="flex items-center gap-2 mb-1">
                         <h4 className="font-semibold text-sm">{t.title}</h4>

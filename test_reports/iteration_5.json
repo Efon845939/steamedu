@@ -1,0 +1,47 @@
+{
+  "summary": "V3 round tested: security hardening (brute-force lockout, registration rate limit, password min length, ReDoS-safe search, seed-data teacher gate, rotated JWT secret, CORS) and new features (weekly recap + point_events, printable certificates, idea Teacher's Pick spotlight, Tournament->Contest rename). New pytest suite /app/backend/tests/test_v3_security_features.py: 21/21 passing. Existing regression suite /app/backend/tests/backend_test.py: 58/58 passing. Playwright E2E: fresh 16-18 student login -> navbar (Home/Content/Dashboard/Ideas/Contests) -> /tournaments 301->/contests redirect -> Contests page join 'Autumn Math Sprint' -> take contest quiz (5 Qs) -> submit -> live ranking (5 participants) -> weekly recap updated (+30 points, 1/7 active days); certificate modal verified end-to-end (seeded one temp certificate, modal shows student name, contest title, professional badge, Print/Save-as-PDF button, close works, then cert deleted); Ideas spotlight verified for teacher (5 star pin buttons, toast, Teacher's Picks section with 'picked by Dr. Sarah Mitchell', card badge, detail badge/pin) and for student (picks visible, zero pin buttons, detail badge only, 403 on API); no user-facing 'Tournament' word found on Contests page, student dashboard, teacher dashboard, leaderboard or certificate modal. Data restored: all TEST_/TESTui_ users, attempts, entries, point_events and the temp certificate deleted; spotlight unpinned (DB back to 7 users, 4 ideas, 2 contests, 3 challenges, 0 certs, 0 point_events).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/tournaments/{id}/submit vs GET /api/tournaments/{id}", "issue": "Rank semantics differ: submit returns competition rank (ties share a rank -> toast said 'currently rank #2' for a 20% score) while the detail ranking list is rendered by positional index (same student shown at #5). Cosmetic inconsistency; consider dense/competition ranking in both."},
+      {"endpoint": "Rate limiting (_rate_buckets)", "issue": "Login lockout / registration limits are in-process memory only — they reset on backend restart and are per-worker (ineffective with >1 uvicorn worker or multiple pods). Acceptable for preview; note for production (use Redis/Mongo-backed counters)."},
+      {"endpoint": "POST /api/auth/login", "issue": "Lockout window is a rolling 5-min list of failures; a correct password is also rejected with 429 while locked (verified). Intended, but there is no message to the legitimate user about wait time granularity — cosmetic."},
+      {"endpoint": "CORS", "issue": "backend/.env CORS_ORIGINS is still '*', so allow_credentials is disabled (correct per the fix). App uses Bearer tokens only, so no functional impact; if cookies are ever adopted, explicit origins must be set."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Navbar / dashboard greeting", "issues": ["Still uses only the first token of full_name: teacher_demo shows 'Welcome, Sarah!' (ok) but students named 'QA Contest 50063865' show 'Welcome back, QA!' and teststudent shows 'Welcome, Test!' — previously reported, unchanged."]},
+      {"screen": "Contests detail", "issues": ["Submitting shows a toast rank that can differ from the position shown in the Live Ranking list (tie handling, see backend minor)."]},
+      {"screen": "Contests detail routing", "issues": ["Contest detail still does not change the URL (stays /contests) — no deep link/back-button support (carried over from iteration_4)."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_v3_security_features.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/cleanup_test_data.py",
+    "/app/test_reports/pytest/pytest_results_v3.xml"
+  ],
+  "action_items": [
+    "Optional: unify contest rank semantics between submit response toast and Live Ranking list display",
+    "Optional (production): move rate-limit/lockout counters out of process memory before multi-worker deploy",
+    "Optional polish: greeting first-name derivation, contest detail deep-linking"
+  ],
+  "critical_code_review_comments": [
+    "server.py is now 1243 lines and still mixes auth, quizzes, contests, ideas, chat, stats and a large seed routine — split into routers.",
+    "GET /api/stats/weekly does 5 unindexed collection scans plus 2 count_documents per call and loads up to 2000 point_events into memory; add indexes on point_events(user_id, created_at), quiz_attempts(user_id, completed_at) and users(role, points).",
+    "/api/ideas/spotlights is placed before /api/ideas/{idea_id} (correct ordering, verified 'spotlights' is not swallowed as an idea id) — keep this ordering invariant documented/tested to avoid regressions.",
+    "spotlight_idea uses update_many on {'spotlight.teacher_id': me} then a separate update_one — two non-atomic writes; concurrent pins by the same teacher could leave two picks. Use a single bulk_write/transaction.",
+    "award_points writes a point_event with reason strings that are free-form; consider an Enum so weekly points_by_reason keys stay stable for the UI.",
+    "Registration rate limit (50/10min/IP) counts ALL attempts including validation failures, so a burst of invalid signups from one school NAT could lock out legitimate students."
+  ],
+  "success_rate": {"backend": "100% (79/79: 21 new V3 + 58 regression)", "frontend": "100% of tested flows (contests rename+join+submit, weekly recap, certificate modal, ideas spotlight teacher/student, redirect)"},
+  "seed_data_creation": "Registered ~12 throwaway TEST_/TESTui_ students+teachers via API, joined/submitted 'Autumn Math Sprint', and temporarily inserted certificate id 'TESTcert-1' for a throwaway student to exercise the certificate modal. All removed afterwards via /app/backend/tests/cleanup_test_data.py (which I extended to also purge point_events) plus manual deletion of the temp certificate and spotlight unpin. DB verified back to seeded state: 7 users, 4 ideas, 2 contests, 3 challenges, 0 certificates, 0 point_events, 0 spotlights.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "/app/memory/test_credentials.md accurate — teststudent/TestPass123!, teacher_demo/TeacherDemo123!, StudentDemo123! demo students, teacher code STEAM-TEACH-2026 all verified after JWT secret rotation",
+  "context_for_next_testing_agent": "Two suites: tests/backend_test.py (58, ~110s) and tests/test_v3_security_features.py (21, ~14s); run with `python -m pytest tests/<file> -p no:randomly`. Registration is limited to 50/10min per IP — running BOTH suites twice inside 10 minutes can trip 429s, space runs out. Login lockout is per username+IP over 5 failed attempts / 5 min and blocks even the correct password, so never brute-force demo accounts. The spotlight test self-clears any existing pin first (a pin left by a previous session made it fail once). No certificates exist in the DB (no contest has been finalized), so to test the certificate modal insert a temp doc into `certificates` for a throwaway student and delete it afterwards — that is how it was verified this round. Always run tests/cleanup_test_data.py after testing (now also purges point_events).",
+  "rca_of_the_issue": "No defects found this round. Single test failure during authoring was environmental: idea[0] was already spotlighted from developer testing, so the toggle POST unpinned instead of pinning — fixed by clearing existing picks at test start. Playbook items on httpOnly cookies / seed_admin do not apply (stateless JWT Bearer, bcrypt $2b$ hashes verified, no admin seeding); brute-force lockout requirement is implemented and verified (5x401 then 429)."
+}

@@ -13,13 +13,14 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import axios from 'axios';
 import { toast } from 'sonner';
 import { subjectEmoji, subjectBadgeColor, formatApiError } from '../lib/steam';
-import { Heart, MessageSquare } from 'lucide-react';
+import { Heart, MessageSquare, Star } from 'lucide-react';
 
 const IdeasPage = () => {
-  const { API } = useContext(AuthContext);
+  const { user, API } = useContext(AuthContext);
   const navigate = useNavigate();
 
   const [ideas, setIdeas] = useState([]);
+  const [spotlights, setSpotlights] = useState([]);
   const [loading, setLoading] = useState(true);
   const [sort, setSort] = useState('new');
   const [category, setCategory] = useState('all');
@@ -42,9 +43,33 @@ const IdeasPage = () => {
     }
   };
 
+  const fetchSpotlights = async () => {
+    try {
+      const res = await axios.get(`${API}/ideas/spotlights`);
+      setSpotlights(res.data);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   useEffect(() => {
     fetchIdeas();
   }, [sort, category]);
+
+  useEffect(() => {
+    fetchSpotlights();
+  }, []);
+
+  const toggleSpotlight = async (ideaId) => {
+    try {
+      const res = await axios.post(`${API}/ideas/${ideaId}/spotlight`);
+      toast.success(res.data.spotlighted ? "Pinned as your Teacher's Pick! 🌟" : "Teacher's Pick removed");
+      fetchIdeas();
+      fetchSpotlights();
+    } catch (e) {
+      toast.error(formatApiError(e.response?.data?.detail));
+    }
+  };
 
   const handleSubmitIdea = async (e) => {
     e.preventDefault();
@@ -98,6 +123,33 @@ const IdeasPage = () => {
             Share your creative ideas, discuss them in the comments, and support your favorites — each student can like an idea once.
           </p>
         </div>
+
+        {spotlights.length > 0 && (
+          <div className="mb-10" data-testid="teachers-picks-section">
+            <h2 className="text-lg font-bold text-gray-900 mb-3 flex items-center gap-2">
+              <Star className="w-5 h-5 text-amber-500 fill-amber-500" /> Teacher's Picks
+            </h2>
+            <div className="grid md:grid-cols-2 gap-4">
+              {spotlights.map((idea) => (
+                <button
+                  key={idea.id}
+                  onClick={() => navigate(`/ideas/${idea.id}`)}
+                  className="text-left p-4 rounded-xl border-2 border-amber-300 bg-gradient-to-r from-amber-50 to-yellow-50 hover:shadow-lg transition-shadow"
+                  data-testid={`spotlight-idea-${idea.id}`}
+                >
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <Badge className="bg-amber-200 text-amber-900 text-xs">🌟 Teacher's Pick</Badge>
+                    <Badge className={subjectBadgeColor(idea.category)}>{subjectEmoji(idea.category)} {idea.category}</Badge>
+                  </div>
+                  <h3 className="font-bold text-gray-900">{idea.title}</h3>
+                  <p className="text-xs text-gray-600 mt-1">
+                    By {idea.author_name} • picked by {idea.spotlight?.teacher_name} • ❤️ {idea.likes} • 💬 {idea.comments_count}
+                  </p>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-8">
           <div className="flex flex-wrap items-center gap-4">
@@ -208,17 +260,34 @@ const IdeasPage = () => {
               >
                 <CardHeader className="flex-1">
                   <div className="flex items-center justify-between mb-3">
-                    <Badge className={subjectBadgeColor(idea.category)}>
-                      {subjectEmoji(idea.category)} {idea.category}
-                    </Badge>
-                    <button
-                      onClick={() => handleLikeIdea(idea.id)}
-                      className={`flex items-center space-x-1 transition-colors p-1 rounded ${idea.liked ? 'text-red-500' : 'text-gray-400 hover:text-red-500'}`}
-                      data-testid={`like-idea-${idea.id}`}
-                    >
-                      <Heart className={`w-5 h-5 ${idea.liked ? 'fill-red-500' : ''}`} />
-                      <span className="text-sm font-medium">{idea.likes}</span>
-                    </button>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Badge className={subjectBadgeColor(idea.category)}>
+                        {subjectEmoji(idea.category)} {idea.category}
+                      </Badge>
+                      {idea.spotlight && (
+                        <Badge className="bg-amber-200 text-amber-900 text-xs" data-testid={`spotlight-badge-${idea.id}`}>🌟 Teacher's Pick</Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {user?.role === 'teacher' && (
+                        <button
+                          onClick={() => toggleSpotlight(idea.id)}
+                          title={idea.spotlight?.teacher_id === user.id ? "Remove your Teacher's Pick" : "Pin as your Teacher's Pick"}
+                          className={`p-1 rounded transition-colors ${idea.spotlight?.teacher_id === user.id ? 'text-amber-500' : 'text-gray-300 hover:text-amber-500'}`}
+                          data-testid={`spotlight-btn-${idea.id}`}
+                        >
+                          <Star className={`w-5 h-5 ${idea.spotlight?.teacher_id === user.id ? 'fill-amber-500' : ''}`} />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleLikeIdea(idea.id)}
+                        className={`flex items-center space-x-1 transition-colors p-1 rounded ${idea.liked ? 'text-red-500' : 'text-gray-400 hover:text-red-500'}`}
+                        data-testid={`like-idea-${idea.id}`}
+                      >
+                        <Heart className={`w-5 h-5 ${idea.liked ? 'fill-red-500' : ''}`} />
+                        <span className="text-sm font-medium">{idea.likes}</span>
+                      </button>
+                    </div>
                   </div>
                   <CardTitle className="text-xl text-gray-900 line-clamp-2">{idea.title}</CardTitle>
                   <CardDescription className="text-sm text-gray-500">

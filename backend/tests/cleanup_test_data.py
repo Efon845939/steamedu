@@ -23,7 +23,7 @@ async def main():
     for coll, field in [("quiz_attempts", "user_id"), ("activity_results", "user_id"),
                         ("tournament_entries", "student_id"), ("challenge_completions", "student_id"),
                         ("certificates", "student_id"), ("ideas", "author_id"),
-                        ("idea_comments", "author_id")]:
+                        ("idea_comments", "author_id"), ("point_events", "user_id")]:
         r = await db[coll].delete_many({field: {"$in": uids}})
         print(f"{coll}: {r.deleted_count}")
     r = await db.messages.delete_many({"$or": [{"sender_id": {"$in": uids}}, {"recipient_id": {"$in": uids}}]})

@@ -42,15 +42,19 @@ Quiz first attempt = score pts • Activity first completion = 50 pts • Challe
 
 ## What's Been Implemented
 - **2026-06 (session 1)**: V1 MVP — auth, quizzes, DnD activities, ideas, content hub; DND lib migration; secured seed; quiz answer stripping (29/29 tests)
-- **2026-06 (session 2, this session)**: FULL V2 — roles/teacher code/age groups, real progress + points + streaks, chat + mentorship, daily challenges, tournaments + certificates + verification, student & teacher leaderboards, fair likes + idea comments + detail page, 27 real content items with external links, per-area Content Hub with age filters, simplified navbar, role-based dashboards. **Tested: 58/58 backend pytest cases, 9/9 frontend E2E flows pass (iteration_4.json)**. Post-test fixes: DOM nesting, honorific-aware greeting, deterministic challenge auto-complete, seed gated to teachers, teacher-leaderboard dict cleanup.
+- **2026-06 (session 2)**: FULL V2 — roles/teacher code/age groups, real progress + points + streaks, chat + mentorship, daily challenges, contests + certificates + verification, student & teacher leaderboards, fair likes + idea comments + detail page, 27 real content items with external links, per-area Content Hub with age filters, simplified navbar, role-based dashboards. Tested 58/58 backend + 9/9 E2E (iteration_4).
+- **2026-06 (session 2, security audit)**: Rotated JWT secret to high-entropy value; login brute-force lockout (5 fails/5min per username+IP → 429); registration rate limit (50/10min/IP); server-side password min length; regex-escaped user search (ReDoS); CORS allow_credentials off for wildcard; demo-account seeding behind SEED_DEMO_ACCOUNTS env flag; /api/seed-data now teacher-only.
+- **2026-06 (session 2, V3 features)**: Printable certificates (styled modal + Print/Save-as-PDF via print CSS); Weekly Recap ("Your Week in Review" card, /api/stats/weekly powered by new point_events log with reasons); Idea Teacher Spotlight (one Teacher's Pick per teacher, pin/unpin, Teacher's Picks section on Ideas page); renamed Tournaments → **Contests** everywhere in UI with a Contests link in the navbar (/contests route, /tournaments redirects; API routes unchanged). **Tested: 79/79 backend (21 new + 58 regression), all E2E flows pass (iteration_5)**. Post-test: tie-aware ranking display unified with submit rank.
 
 ## Backlog
-- **P2**: Tournament detail deep-linking (URL routing for a specific tournament); vertical centering of quiz/activity result cards; remove matched items from left DnD column instead of greying
-- **P2**: Pagination on list endpoints; move teacher-leaderboard aggregation into MongoDB for scale
-- **P3**: Shareable quiz result card; printable/downloadable certificate PDF; minimum activity threshold before teachers appear on leaderboards
-- **P3**: Split server.py into routers (auth/learning/social/tournaments)
+- **P2**: Contest detail deep-linking (URL per contest); vertical centering of quiz/activity result cards; remove matched items from left DnD column instead of greying
+- **P2**: Production rate limiting via Redis/Mongo (current is in-process memory); indexes on point_events(user_id, created_at), quiz_attempts(user_id, completed_at), users(role, points); pagination on list endpoints
+- **P3**: Downloadable certificate as PNG; minimum activity threshold before teachers appear on leaderboards; point-event reason enum
+- **P3**: Split server.py into routers (auth/learning/social/contests)
 
 ## Notes
 - Teacher signup code lives in backend/.env → TEACHER_SIGNUP_CODE
+- SEED_DEMO_ACCOUNTS=true in backend/.env (set false in production to skip demo accounts)
+- JWT secret rotated 2026-06 (old tokens invalid)
 - Credentials: /app/memory/test_credentials.md
-- Demo data: teacher_demo (verified) with 4 students, 3 today-challenges, 2 active pro tournaments, 4 seeded ideas
+- Demo data: teacher_demo (verified) with 4 students, 3 today-challenges, 2 active pro contests, 4 seeded ideas

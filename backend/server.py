@@ -1,9 +1,11 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
+import re
+import time
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr
@@ -24,6 +26,7 @@ db = client[os.environ['DB_NAME']]
 
 SECRET_KEY = os.environ['JWT_SECRET_KEY']
 TEACHER_SIGNUP_CODE = os.environ['TEACHER_SIGNUP_CODE']
+SEED_DEMO_ACCOUNTS = os.environ.get('SEED_DEMO_ACCOUNTS', 'false').lower() == 'true'
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7
 
@@ -206,9 +209,13 @@ async def require_teacher(current_user: User = Depends(get_current_user)):
     return current_user
 
 
-async def award_points(user_id: str, pts: int):
+async def award_points(user_id: str, pts: int, reason: str = "general"):
     if pts:
         await db.users.update_one({"id": user_id}, {"$inc": {"points": pts}})
+        await db.point_events.insert_one({
+            "id": str(uuid.uuid4()), "user_id": user_id, "points": pts, "reason": reason,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
 
 
 async def touch_streak(user_id: str) -> int:
@@ -235,9 +242,33 @@ def age_group_query(age_group: Optional[str]) -> dict:
     return {}
 
 
+# ---------------- Rate limiting (in-memory sliding window) ----------------
+_rate_buckets = {}
+
+
+def _rate_limit(key: str, max_events: int, window_seconds: int) -> bool:
+    now = time.time()
+    events = [t for t in _rate_buckets.get(key, []) if now - t < window_seconds]
+    if len(events) >= max_events:
+        _rate_buckets[key] = events
+        return False
+    events.append(now)
+    _rate_buckets[key] = events
+    return True
+
+
+def _client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for")
+    return fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else "unknown")
+
+
 # ---------------- Auth ----------------
 @api_router.post("/auth/register", response_model=User)
-async def register(user_data: UserCreate):
+async def register(user_data: UserCreate, request: Request):
+    if not _rate_limit(f"reg:{_client_ip(request)}", 50, 600):
+        raise HTTPException(status_code=429, detail="Too many registration attempts. Please try again later.")
+    if len(user_data.password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters long")
     if user_data.role not in ("student", "teacher"):
         raise HTTPException(status_code=400, detail="Role must be 'student' or 'teacher'")
     if user_data.role == "teacher":
@@ -266,10 +297,18 @@ async def register(user_data: UserCreate):
 
 
 @api_router.post("/auth/login", response_model=Token)
-async def login(user_data: UserLogin):
+async def login(user_data: UserLogin, request: Request):
+    fail_key = f"login:{_client_ip(request)}:{user_data.username.lower()}"
+    now = time.time()
+    recent_failures = [t for t in _rate_buckets.get(fail_key, []) if now - t < 300]
+    if len(recent_failures) >= 5:
+        raise HTTPException(status_code=429, detail="Too many failed login attempts. Please try again in a few minutes.")
     user = await db.users.find_one({"username": user_data.username})
     if not user or not verify_password(user_data.password, user["password"]):
+        recent_failures.append(now)
+        _rate_buckets[fail_key] = recent_failures
         raise HTTPException(status_code=401, detail="Invalid credentials")
+    _rate_buckets.pop(fail_key, None)
     return Token(access_token=create_access_token({"sub": user["username"]}), token_type="bearer")
 
 
@@ -333,7 +372,7 @@ async def submit_quiz_attempt(quiz_id: str, attempt_data: dict, current_user: Us
     await db.quiz_attempts.insert_one(attempt)
 
     points_earned = score if first_attempt else 0
-    await award_points(current_user.id, points_earned)
+    await award_points(current_user.id, points_earned, "quiz")
     streak = await touch_streak(current_user.id)
 
     challenge_completed = None
@@ -350,7 +389,7 @@ async def submit_quiz_attempt(quiz_id: str, attempt_data: dict, current_user: Us
                 "id": str(uuid.uuid4()), "challenge_id": ch["id"], "student_id": current_user.id,
                 "score": score, "completed_at": datetime.now(timezone.utc).isoformat(),
             })
-            await award_points(current_user.id, ch.get("points", 20))
+            await award_points(current_user.id, ch.get("points", 20), "challenge")
             points_earned += ch.get("points", 20)
             challenge_completed = ch["title"]
 
@@ -383,7 +422,7 @@ async def complete_activity(activity_id: str, completion: ActivityCompletion, cu
         "score": completion.score, "completed_at": datetime.now(timezone.utc).isoformat(),
     })
     points = ACTIVITY_POINTS if first else 0
-    await award_points(current_user.id, points)
+    await award_points(current_user.id, points, "activity")
     streak = await touch_streak(current_user.id)
     return {"points_earned": points, "streak_days": streak, "first_completion": first}
 
@@ -428,6 +467,33 @@ async def get_ideas(category: Optional[str] = None, sort: str = "new", current_u
         result.append({**idea, "liked": current_user.id in liked_by, "comments_count": comments,
                        "liked_by": []})
     return result
+
+
+@api_router.get("/ideas/spotlights")
+async def get_spotlighted_ideas(current_user: User = Depends(get_current_user)):
+    ideas = await db.ideas.find({"spotlight": {"$ne": None}}, {"_id": 0}).sort("spotlight.at", -1).to_list(20)
+    result = []
+    for idea in ideas:
+        comments = await db.idea_comments.count_documents({"idea_id": idea["id"]})
+        result.append({**idea, "liked": current_user.id in idea.get("liked_by", []),
+                       "comments_count": comments, "liked_by": []})
+    return result
+
+
+@api_router.post("/ideas/{idea_id}/spotlight")
+async def spotlight_idea(idea_id: str, current_user: User = Depends(require_teacher)):
+    idea = await db.ideas.find_one({"id": idea_id})
+    if not idea:
+        raise HTTPException(status_code=404, detail="Idea not found")
+    current = idea.get("spotlight")
+    if current and current.get("teacher_id") == current_user.id:
+        await db.ideas.update_one({"id": idea_id}, {"$set": {"spotlight": None}})
+        return {"spotlighted": False}
+    await db.ideas.update_many({"spotlight.teacher_id": current_user.id}, {"$set": {"spotlight": None}})
+    sp = {"teacher_id": current_user.id, "teacher_name": current_user.full_name,
+          "at": datetime.now(timezone.utc).isoformat()}
+    await db.ideas.update_one({"id": idea_id}, {"$set": {"spotlight": sp}})
+    return {"spotlighted": True, "spotlight": sp}
 
 
 @api_router.get("/ideas/{idea_id}")
@@ -477,7 +543,7 @@ async def add_comment(idea_id: str, comment: CommentCreate, current_user: User =
 async def search_users(q: str, current_user: User = Depends(get_current_user)):
     if not q.strip():
         return []
-    regex = {"$regex": q.strip(), "$options": "i"}
+    regex = {"$regex": re.escape(q.strip()[:50]), "$options": "i"}
     users = await db.users.find({
         "id": {"$ne": current_user.id},
         "$or": [{"username": regex}, {"full_name": regex}],
@@ -656,6 +722,54 @@ async def get_my_stats(current_user: User = Depends(get_current_user)):
     return await _full_student_stats(current_user.dict())
 
 
+@api_router.get("/stats/weekly")
+async def weekly_recap(current_user: User = Depends(get_current_user)):
+    if current_user.role != "student":
+        raise HTTPException(status_code=403, detail="Weekly recap is for students")
+    since = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    uid = current_user.id
+    events = await db.point_events.find({"user_id": uid, "created_at": {"$gte": since}}, {"_id": 0}).to_list(2000)
+    attempts = await db.quiz_attempts.find({"user_id": uid, "completed_at": {"$gte": since}}, {"_id": 0}).to_list(1000)
+    acts = await db.activity_results.find({"user_id": uid, "completed_at": {"$gte": since}}, {"_id": 0}).to_list(1000)
+    chall = await db.challenge_completions.find({"student_id": uid, "completed_at": {"$gte": since}}, {"_id": 0}).to_list(1000)
+    certs = await db.certificates.count_documents({"student_id": uid, "awarded_at": {"$gte": since}})
+
+    points_week = sum(e["points"] for e in events)
+    by_reason = {}
+    for e in events:
+        r = e.get("reason", "other")
+        by_reason[r] = by_reason.get(r, 0) + e["points"]
+
+    active_days = {str(x.get("completed_at", ""))[:10] for x in attempts + acts + chall}
+    active_days |= {e["created_at"][:10] for e in events}
+    active_days.discard("")
+
+    fresh = await db.users.find_one({"id": uid})
+    my_points = fresh.get("points", 0)
+    rank_general = await db.users.count_documents({"role": "student", "points": {"$gt": my_points}}) + 1
+    rank_age = None
+    if fresh.get("age_group"):
+        rank_age = await db.users.count_documents(
+            {"role": "student", "age_group": fresh["age_group"], "points": {"$gt": my_points}}) + 1
+
+    best_quiz = max(attempts, key=lambda a: a["score"], default=None)
+    return {
+        "points_week": points_week,
+        "points_by_reason": by_reason,
+        "quizzes_week": len(attempts),
+        "best_quiz": {"title": best_quiz.get("quiz_title", "Quiz"), "score": best_quiz["score"]} if best_quiz else None,
+        "activities_week": len({a["activity_id"] for a in acts}),
+        "challenges_week": len(chall),
+        "certificates_week": certs,
+        "active_days": len(active_days),
+        "streak_days": fresh.get("streak_days", 0),
+        "rank_general": rank_general,
+        "rank_age_group": rank_age,
+        "age_group": fresh.get("age_group"),
+        "total_points": my_points,
+    }
+
+
 @api_router.get("/stats/student/{student_id}")
 async def get_student_stats(student_id: str, current_user: User = Depends(require_teacher)):
     student = await db.users.find_one({"id": student_id})
@@ -724,7 +838,7 @@ async def complete_challenge(challenge_id: str, current_user: User = Depends(get
         "id": str(uuid.uuid4()), "challenge_id": challenge_id, "student_id": current_user.id,
         "completed_at": datetime.now(timezone.utc).isoformat(),
     })
-    await award_points(current_user.id, ch.get("points", 20))
+    await award_points(current_user.id, ch.get("points", 20), "challenge")
     streak = await touch_streak(current_user.id)
     return {"points_earned": ch.get("points", 20), "streak_days": streak}
 
@@ -756,7 +870,7 @@ async def _finalize_tournament(t: dict):
             "teacher_name": t["teacher_name"], "is_professional": t.get("is_professional", False),
             "awarded_at": datetime.now(timezone.utc).isoformat(),
         })
-        await award_points(winner["student_id"], TOURNAMENT_WIN_BONUS)
+        await award_points(winner["student_id"], TOURNAMENT_WIN_BONUS, "contest_win")
     await db.tournaments.update_one({"id": t["id"]}, {"$set": update})
     return {**t, **update}
 
@@ -872,7 +986,7 @@ async def submit_tournament(tournament_id: str, attempt_data: dict, current_user
         {"id": entry["id"]},
         {"$set": {"score": score, "completed_at": datetime.now(timezone.utc).isoformat()}},
     )
-    await award_points(current_user.id, TOURNAMENT_POINTS)
+    await award_points(current_user.id, TOURNAMENT_POINTS, "contest")
     streak = await touch_streak(current_user.id)
     better = await db.tournament_entries.count_documents(
         {"tournament_id": tournament_id, "score": {"$gt": score}})
@@ -992,6 +1106,10 @@ async def seed_sample_data(current_user: User = Depends(require_teacher)):
     await db.activities.insert_many(activities)
     await db.content.insert_many(content)
 
+    if not SEED_DEMO_ACCOUNTS:
+        return {"message": "Seed complete (demo accounts disabled)", "quizzes": len(quizzes),
+                "activities": len(activities), "content_items": len(content)}
+
     # Demo accounts
     async def ensure_user(username, email, full_name, password, role, age=None, verified=False, teacher_id=None, teacher_name=None, points=0, streak=0):
         existing = await db.users.find_one({"username": username})
@@ -1106,10 +1224,11 @@ async def seed_sample_data(current_user: User = Depends(require_teacher)):
 
 app.include_router(api_router)
 
+_cors_origins = [o.strip() for o in os.environ.get('CORS_ORIGINS', '*').split(',')]
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_credentials=_cors_origins != ["*"],
+    allow_origins=_cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )

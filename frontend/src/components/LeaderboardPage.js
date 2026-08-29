@@ -124,7 +124,7 @@ const LeaderboardPage = () => {
               <Card className="bg-white/80 backdrop-blur-sm" data-testid="best-teachers-card">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2"><Trophy className="w-5 h-5 text-amber-500" />Best Teachers</CardTitle>
-                  <CardDescription>75% professional tournaments hosted, 25% student streaks & quiz scores</CardDescription>
+                  <CardDescription>75% professional contests hosted, 25% student streaks & quiz scores</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-2">
                   {teachers.best.length === 0 ? (
@@ -138,7 +138,7 @@ const LeaderboardPage = () => {
                             {t.full_name}
                             {t.verified && <BadgeCheck className="w-4 h-4 text-sky-500" />}
                           </h4>
-                          <p className="text-xs text-gray-500">{t.pro_tournaments} pro tournaments • {t.students_count} students</p>
+                          <p className="text-xs text-gray-500">{t.pro_tournaments} pro contests • {t.students_count} students</p>
                         </div>
                       </div>
                       <Badge className="bg-amber-100 text-amber-800">{t.score}</Badge>
@@ -150,7 +150,7 @@ const LeaderboardPage = () => {
               <Card className="bg-white/80 backdrop-blur-sm" data-testid="popular-teachers-card">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2"><Medal className="w-5 h-5 text-purple-500" />Most Popular</CardTitle>
-                  <CardDescription>Number of their students who competed in tournaments</CardDescription>
+                  <CardDescription>Number of their students who competed in contests</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-2">
                   {teachers.popular.length === 0 ? (

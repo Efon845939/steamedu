@@ -14,9 +14,9 @@ const statusBadge = (status) => ({
   ended: 'bg-gray-200 text-gray-700',
 }[status]);
 
-const TournamentsPage = () => {
+const ContestsPage = () => {
   const { user, API } = useContext(AuthContext);
-  const [tournaments, setTournaments] = useState([]);
+  const [contests, setContests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState(null);
   const [taking, setTaking] = useState(false);
@@ -24,10 +24,10 @@ const TournamentsPage = () => {
   const [answers, setAnswers] = useState({});
   const [result, setResult] = useState(null);
 
-  const fetchTournaments = async () => {
+  const fetchContests = async () => {
     try {
       const res = await axios.get(`${API}/tournaments`);
-      setTournaments(res.data);
+      setContests(res.data);
     } catch (e) {
       console.error(e);
     } finally {
@@ -36,7 +36,7 @@ const TournamentsPage = () => {
   };
 
   useEffect(() => {
-    fetchTournaments();
+    fetchContests();
   }, []);
 
   const openDetail = async (id) => {
@@ -50,11 +50,11 @@ const TournamentsPage = () => {
     }
   };
 
-  const joinTournament = async (t) => {
+  const joinContest = async (t) => {
     try {
       await axios.post(`${API}/tournaments/${t.id}/join`);
       toast.success(`Joined "${t.title}"! Take the quiz whenever you're ready.`);
-      fetchTournaments();
+      fetchContests();
       if (detail?.id === t.id) openDetail(t.id);
     } catch (e) {
       toast.error(formatApiError(e.response?.data?.detail));
@@ -68,7 +68,7 @@ const TournamentsPage = () => {
       setAnswers({});
       setTaking(true);
     } catch (e) {
-      toast.error('Could not load the tournament quiz');
+      toast.error('Could not load the contest quiz');
     }
   };
 
@@ -79,7 +79,7 @@ const TournamentsPage = () => {
       setResult(res.data);
       setTaking(false);
       toast.success(`Submitted! You scored ${res.data.score}% — currently rank #${res.data.rank} 🏆`);
-      fetchTournaments();
+      fetchContests();
       openDetail(detail.id);
     } catch (e) {
       toast.error(formatApiError(e.response?.data?.detail));
@@ -112,7 +112,7 @@ const TournamentsPage = () => {
           </Card>
 
           {quiz.questions.map((q, qi) => (
-            <Card key={qi} className="bg-white/90 backdrop-blur-sm mb-4" data-testid={`tournament-question-${qi}`}>
+            <Card key={qi} className="bg-white/90 backdrop-blur-sm mb-4" data-testid={`contest-question-${qi}`}>
               <CardHeader>
                 <CardTitle className="text-base">{qi + 1}. {q.question}</CardTitle>
               </CardHeader>
@@ -126,7 +126,7 @@ const TournamentsPage = () => {
                         ? 'border-amber-500 bg-amber-50 text-amber-800'
                         : 'border-gray-200 bg-white hover:border-amber-200'
                     }`}
-                    data-testid={`tournament-q${qi}-option-${oi}`}
+                    data-testid={`contest-q${qi}-option-${oi}`}
                   >
                     {opt}
                   </button>
@@ -136,12 +136,12 @@ const TournamentsPage = () => {
           ))}
 
           <div className="flex justify-between">
-            <Button variant="outline" onClick={() => setTaking(false)} data-testid="cancel-tournament-attempt-btn">Cancel</Button>
+            <Button variant="outline" onClick={() => setTaking(false)} data-testid="cancel-contest-attempt-btn">Cancel</Button>
             <Button
               onClick={submitAttempt}
               disabled={!allAnswered}
               className="bg-amber-600 hover:bg-amber-700"
-              data-testid="submit-tournament-attempt-btn"
+              data-testid="submit-contest-attempt-btn"
             >
               Submit Final Answers
             </Button>
@@ -155,15 +155,15 @@ const TournamentsPage = () => {
   if (detail) {
     const myEntry = detail.ranking.find((e) => e.student_id === user.id)
       || detail.pending.find((e) => e.student_id === user.id);
-    const listItem = tournaments.find((t) => t.id === detail.id);
+    const listItem = contests.find((t) => t.id === detail.id);
     return (
       <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 pt-8">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <Button variant="ghost" onClick={() => setDetail(null)} className="mb-4 text-gray-600" data-testid="back-to-tournaments-btn">
-            <ArrowLeft className="w-4 h-4 mr-2" /> All tournaments
+          <Button variant="ghost" onClick={() => setDetail(null)} className="mb-4 text-gray-600" data-testid="back-to-contests-btn">
+            <ArrowLeft className="w-4 h-4 mr-2" /> All contests
           </Button>
 
-          <Card className="bg-white/90 backdrop-blur-sm shadow-xl mb-6" data-testid="tournament-detail-card">
+          <Card className="bg-white/90 backdrop-blur-sm shadow-xl mb-6" data-testid="contest-detail-card">
             <CardHeader>
               <div className="flex flex-wrap items-center gap-2 mb-2">
                 <Badge className={statusBadge(detail.status)}>{detail.status}</Badge>
@@ -182,25 +182,25 @@ const TournamentsPage = () => {
             </CardHeader>
             <CardContent>
               {detail.status === 'ended' && detail.winner_name && (
-                <div className="p-4 rounded-lg border-2 border-amber-300 bg-gradient-to-r from-amber-50 to-yellow-50 mb-4" data-testid="tournament-winner-banner">
+                <div className="p-4 rounded-lg border-2 border-amber-300 bg-gradient-to-r from-amber-50 to-yellow-50 mb-4" data-testid="contest-winner-banner">
                   <p className="font-bold text-amber-900">🏆 Champion: {detail.winner_name} — certificate awarded!</p>
                 </div>
               )}
               {user.role === 'student' && detail.status === 'active' && (
                 !myEntry ? (
                   listItem?.can_join ? (
-                    <Button onClick={() => joinTournament(detail)} className="bg-amber-600 hover:bg-amber-700" data-testid="join-tournament-detail-btn">
-                      Join Tournament
+                    <Button onClick={() => joinContest(detail)} className="bg-amber-600 hover:bg-amber-700" data-testid="join-contest-detail-btn">
+                      Join Contest
                     </Button>
                   ) : (
-                    <p className="text-sm text-gray-500">This tournament isn't open to your age group or class.</p>
+                    <p className="text-sm text-gray-500">This contest isn't open to your age group or class.</p>
                   )
                 ) : myEntry.score === null ? (
-                  <Button onClick={startAttempt} className="bg-amber-600 hover:bg-amber-700" data-testid="take-tournament-quiz-btn">
-                    Take the Tournament Quiz
+                  <Button onClick={startAttempt} className="bg-amber-600 hover:bg-amber-700" data-testid="take-contest-quiz-btn">
+                    Take the Contest Quiz
                   </Button>
                 ) : (
-                  <Badge className="bg-emerald-100 text-emerald-800 text-base px-4 py-2" data-testid="my-tournament-score">
+                  <Badge className="bg-emerald-100 text-emerald-800 text-base px-4 py-2" data-testid="my-contest-score">
                     Your score: {myEntry.score}%
                   </Badge>
                 )
@@ -211,7 +211,7 @@ const TournamentsPage = () => {
             </CardContent>
           </Card>
 
-          <Card className="bg-white/90 backdrop-blur-sm shadow-xl" data-testid="tournament-ranking-card">
+          <Card className="bg-white/90 backdrop-blur-sm shadow-xl" data-testid="contest-ranking-card">
             <CardHeader>
               <CardTitle className="text-xl">📊 Live Ranking ({detail.participants} participants)</CardTitle>
             </CardHeader>
@@ -220,23 +220,32 @@ const TournamentsPage = () => {
                 <p className="text-gray-500 text-sm text-center py-4">No scores submitted yet — be the first!</p>
               ) : (
                 <div className="space-y-2">
-                  {detail.ranking.map((e, i) => (
+                  {(() => {
+                    let lastScore = null;
+                    let lastRank = 0;
+                    return detail.ranking.map((e, i) => {
+                      const rank = e.score === lastScore ? lastRank : i + 1;
+                      lastScore = e.score;
+                      lastRank = rank;
+                      return (
                     <div
                       key={e.id}
                       className={`flex items-center justify-between p-3 rounded-lg ${
-                        e.student_id === user.id ? 'bg-emerald-50 border-2 border-emerald-300' : i < 3 ? 'bg-gradient-to-r from-amber-50 to-yellow-50' : 'bg-gray-50'
+                        e.student_id === user.id ? 'bg-emerald-50 border-2 border-emerald-300' : rank <= 3 ? 'bg-gradient-to-r from-amber-50 to-yellow-50' : 'bg-gray-50'
                       }`}
                       data-testid={`ranking-row-${i + 1}`}
                     >
                       <div className="flex items-center gap-3">
-                        <span className="font-bold w-8 text-center">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}</span>
+                        <span className="font-bold w-8 text-center">{rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `#${rank}`}</span>
                         <span className="font-semibold text-sm">
                           {e.student_name} {e.student_id === user.id && <span className="text-emerald-600">(you)</span>}
                         </span>
                       </div>
                       <Badge className="bg-blue-100 text-blue-800">{e.score}%</Badge>
                     </div>
-                  ))}
+                      );
+                    });
+                  })()}
                 </div>
               )}
               {detail.pending.length > 0 && (
@@ -254,24 +263,24 @@ const TournamentsPage = () => {
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 pt-8">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="text-center mb-10">
-          <h1 className="text-4xl font-bold text-gray-900 mb-3">Tournaments 🏆</h1>
+          <h1 className="text-4xl font-bold text-gray-900 mb-3">Contests 🏆</h1>
           <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-            Compete with students in your age group. Win a professional tournament and earn a certificate that means something.
+            Compete with students in your age group. Win a professional contest and earn a certificate that means something.
           </p>
         </div>
 
-        {tournaments.length === 0 ? (
+        {contests.length === 0 ? (
           <Card className="bg-white/70 backdrop-blur-sm max-w-md mx-auto">
             <CardContent className="text-center py-12">
               <div className="text-6xl mb-4">🏆</div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-2">No Tournaments Yet</h3>
-              <p className="text-gray-600">Check back soon — verified teachers host tournaments regularly.</p>
+              <h3 className="text-xl font-semibold text-gray-900 mb-2">No Contests Yet</h3>
+              <p className="text-gray-600">Check back soon — verified teachers host contests regularly.</p>
             </CardContent>
           </Card>
         ) : (
           <div className="grid md:grid-cols-2 gap-6">
-            {tournaments.map((t) => (
-              <Card key={t.id} className="bg-white/80 backdrop-blur-sm hover:shadow-xl transition-all duration-300" data-testid={`tournament-card-${t.id}`}>
+            {contests.map((t) => (
+              <Card key={t.id} className="bg-white/80 backdrop-blur-sm hover:shadow-xl transition-all duration-300" data-testid={`contest-card-${t.id}`}>
                 <CardHeader>
                   <div className="flex flex-wrap items-center gap-2 mb-2">
                     <Badge className={statusBadge(t.status)}>{t.status}</Badge>
@@ -288,16 +297,16 @@ const TournamentsPage = () => {
                   </div>
                 </CardHeader>
                 <CardContent className="flex gap-3">
-                  <Button variant="outline" onClick={() => openDetail(t.id)} className="flex-1" data-testid={`view-tournament-${t.id}`}>
+                  <Button variant="outline" onClick={() => openDetail(t.id)} className="flex-1" data-testid={`view-contest-${t.id}`}>
                     View Ranking
                   </Button>
                   {t.can_join && (
-                    <Button onClick={() => joinTournament(t)} className="flex-1 bg-amber-600 hover:bg-amber-700" data-testid={`join-tournament-${t.id}`}>
+                    <Button onClick={() => joinContest(t)} className="flex-1 bg-amber-600 hover:bg-amber-700" data-testid={`join-contest-${t.id}`}>
                       Join
                     </Button>
                   )}
                   {t.my_entry && t.my_entry.score === null && t.status === 'active' && (
-                    <Button onClick={() => openDetail(t.id)} className="flex-1 bg-emerald-600 hover:bg-emerald-700" data-testid={`compete-tournament-${t.id}`}>
+                    <Button onClick={() => openDetail(t.id)} className="flex-1 bg-emerald-600 hover:bg-emerald-700" data-testid={`compete-contest-${t.id}`}>
                       Compete Now
                     </Button>
                   )}
@@ -314,4 +323,4 @@ const TournamentsPage = () => {
   );
 };
 
-export default TournamentsPage;
+export default ContestsPage;
