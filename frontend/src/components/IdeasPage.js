@@ -137,7 +137,7 @@ const IdeasPage = () => {
         <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-8">
           <div className="flex flex-wrap gap-4">
             <Select value={filter} onValueChange={setFilter}>
-              <SelectTrigger className="w-48">
+              <SelectTrigger className="w-48" data-testid="ideas-filter-select">
                 <SelectValue placeholder="Filter by category..." />
               </SelectTrigger>
               <SelectContent>
@@ -181,7 +181,7 @@ const IdeasPage = () => {
                 <div className="space-y-2">
                   <Label htmlFor="idea-category">Category</Label>
                   <Select value={newIdea.category} onValueChange={(value) => setNewIdea({...newIdea, category: value})}>
-                    <SelectTrigger>
+                    <SelectTrigger data-testid="idea-category-select">
                       <SelectValue placeholder="Choose a STEAM category" />
                     </SelectTrigger>
                     <SelectContent>
@@ -274,6 +274,7 @@ const IdeasPage = () => {
               <Card 
                 key={idea.id} 
                 className="bg-white/70 backdrop-blur-sm hover:shadow-xl transition-all duration-300 card-hover"
+                data-testid={`idea-card-${idea.id}`}
               >
                 <CardHeader>
                   <div className="flex items-center justify-between mb-3">

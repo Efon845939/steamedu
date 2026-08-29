@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -7,6 +8,7 @@ import { Input } from './ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
 const ContentHub = () => {
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
 
@@ -212,7 +214,7 @@ const ContentHub = () => {
             data-testid="content-search-input"
           />
           <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-            <SelectTrigger className="w-48">
+            <SelectTrigger className="w-48" data-testid="content-category-select">
               <SelectValue placeholder="Filter by category" />
             </SelectTrigger>
             <SelectContent>
@@ -392,14 +394,16 @@ const ContentHub = () => {
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
                 <Button 
                   className="bg-white text-purple-600 hover:bg-gray-100 px-8 py-3"
-                  onClick={() => {/* Navigate to activities */}}
+                  onClick={() => navigate('/activities')}
+                  data-testid="cta-try-activities-btn"
                 >
                   Try Activities
                 </Button>
                 <Button 
                   variant="outline" 
                   className="border-white text-white hover:bg-white hover:text-purple-600 px-8 py-3"
-                  onClick={() => {/* Navigate to quizzes */}}
+                  onClick={() => navigate('/quiz')}
+                  data-testid="cta-take-quizzes-btn"
                 >
                   Take Quizzes
                 </Button>

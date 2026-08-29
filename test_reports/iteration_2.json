@@ -1,0 +1,57 @@
+{
+  "summary": "Full e2e testing of STEAM Hub. Backend: 26 pytest cases across auth (register/login/me/JWT), quizzes (list/get/attempt scoring), activities (list+subject/difficulty filters), ideas (create/list/filter/like), seed-data idempotency - 26/26 PASSED. Frontend: landing page, protected-route redirects, register auto-login, login with seeded creds, dashboard stats (Quizzes Available = 3), quiz take-flow with option select/Next/Previous/Submit/result badge, activities list + filter dropdown, ideas create + like increment, Content Hub tabs/search/category filter, logout (token cleared, redirect) - all PASSED except drag-and-drop matching, which is completely broken due to react-beautiful-dnd being incompatible with React 19.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/seed-data", "issue": "Unauthenticated and destructive (deletes ALL activities and system quizzes). Any anonymous caller can wipe/reset content. Should require auth or be admin-only."},
+      {"endpoint": "POST /api/ideas/{id}/like", "issue": "No per-user like tracking - same user can like the same idea unlimited times ($inc only). Also returns 404 when likes already at the same value is not an issue, but modified_count==0 semantics can misreport."},
+      {"endpoint": "POST /api/quizzes/{id}/attempt", "issue": "attempt_data typed as raw dict (no Pydantic model) - no validation of answers payload; empty answers silently score 0."},
+      {"endpoint": "GET /api/quizzes", "issue": "Returns correct_answer for every question to unauthenticated clients - answers are leakable before submission."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "ActivitiesPage (react-beautiful-dnd)", "issue": "CRITICAL: Drag-and-drop matching is non-functional. Console throws 'react-beautiful-dnd: Invariant failed: isDropDisabled must be a boolean' (10 occurrences on activity open) because react-beautiful-dnd@13.1.1 relies on function-component defaultProps, which React 19.2 ignores. Verified with both keyboard drag (Space/Arrow/Space) and a 15-step real mouse drag: no item ever lands in a drop zone, all 4 zones remain 'Drop item here', and 'Check Answers' stays disabled - so the score screen is unreachable through the UI.", "selector": "[data-testid^=\"drag-item-\"] -> [data-testid^=\"drop-zone-\"], [data-testid=\"check-answers-btn\"]", "priority": "CRITICAL"},
+      {"component": "Navbar", "issue": "Active-route highlight is wrong: isActive uses location.pathname.startsWith(path); since every path starts with '/', the Home link is highlighted on every page simultaneously with the real active link (verified on /dashboard, /quiz, /activities).", "selector": "[data-testid=\"nav-home\"]", "priority": "MEDIUM"},
+      {"component": "ContentHub", "issue": "Two CTA buttons at the bottom of the page have empty onClick handlers ({/* Navigate to activities */} and {/* Navigate to quizzes */}) - dead buttons that do nothing when clicked.", "selector": "ContentHub.js lines ~395 and ~402", "priority": "MEDIUM"},
+      {"component": "Navbar (mobile)", "issue": "Desktop and mobile menus render duplicate data-testid values (nav-home, nav-quiz, logout-btn/mobile-logout-btn partially). Duplicate testids force .first/.last in tests; consider prefixing mobile ones.", "selector": "[data-testid=\"nav-home\"]", "priority": "LOW"}
+    ],
+    "integration_issues": [
+      {"flow": "Activities drag-drop -> score", "issue": "Cannot be completed end-to-end; library-level failure blocks the whole feature (score API/state never reached).", "affected_selectors": ["[data-testid=\"check-answers-btn\"]", "[data-testid=\"activity-score\"]"]}
+    ],
+    "design_issues": [
+      {"screen": "Dashboard", "issues": ["'Learning Progress 65%' and 'Streak 7 days' are hardcoded mock values not backed by any API - misleading to users", "'Your Learning Path' subject progress bars are also static"]},
+      {"screen": "Ideas Hub", "issues": ["Ideas collection is now empty (no seeded ideas), so the page shows an empty-state until a user posts - consider seeding 2-3 sample ideas for demo value"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/backend/tests/cleanup_test_data.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "CRITICAL: Fix drag-and-drop. Recommended: replace react-beautiful-dnd with the maintained React 19-compatible fork @hello-pangea/dnd (yarn add @hello-pangea/dnd, yarn remove react-beautiful-dnd, change the import in ActivitiesPage.js - API is identical). Alternative stop-gap: pass explicit booleans to every Droppable/Draggable (isDropDisabled={false} isCombineEnabled={false} ignoreContainerClipping={false} and shouldRespectForcePress={false}) since React 19 no longer applies defaultProps.",
+    "Fix Navbar isActive: use exact match for '/' (e.g. path === '/' ? location.pathname === '/' : location.pathname.startsWith(path)).",
+    "Wire up or remove the two dead ContentHub CTA buttons (empty onClick).",
+    "Protect POST /api/seed-data (auth/admin) - currently anonymous callers can delete all activities.",
+    "Strip correct_answer from GET /api/quizzes / GET /api/quizzes/{id} responses and validate the attempt payload with a Pydantic model.",
+    "Replace hardcoded Dashboard stats (65% progress, 7-day streak) with real data or label them clearly as demo."
+  ],
+  "critical_code_review_comments": [
+    "react-beautiful-dnd is deprecated and incompatible with React 19 (defaultProps ignored for function components) - this is the root cause of the broken activities feature, not app logic.",
+    "ActivitiesPage.js (506 lines) duplicates the entire seeded activity dataset as a client-side fallback (setSampleActivities); this hides API failures and is dead code now that /api/activities returns 3 activities. Remove or split the file.",
+    "ActivitiesPage filter mixes subject and difficulty into a single 'filter' state; a user cannot filter by subject AND difficulty together, and the dropdown label 'Filter by...' is ambiguous.",
+    "server.py uses deprecated Pydantic .dict() and FastAPI @app.on_event('shutdown'); migrate to .model_dump() and lifespan handlers.",
+    "Unused import 'from passlib.hash import bcrypt' in server.py alongside bcrypt_lib."
+  ],
+  "updated_files": [
+    "/app/frontend/src/components/ActivitiesPage.js (added data-testid=\"activity-filter-select\")",
+    "/app/frontend/src/components/IdeasPage.js (added data-testid=\"ideas-filter-select\", \"idea-category-select\")",
+    "/app/frontend/src/components/ContentHub.js (added data-testid=\"content-category-select\")",
+    "/app/backend/tests/backend_test.py (new)",
+    "/app/backend/tests/cleanup_test_data.py (new)"
+  ],
+  "success_rate": {"backend": "100% (26/26)", "frontend": "~90% (13/14 flows; drag-and-drop matching fails)"},
+  "seed_data_creation": "Registered throwaway users (TEST_user*, qa*) and TEST_ ideas during testing; all removed afterwards via /app/backend/tests/cleanup_test_data.py. Quizzes/activities re-seeded via POST /api/seed-data (3 + 3). Note: db.ideas is now empty (there were no pre-existing non-test ideas).",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "test_credentials": "username=teststudent / password=TestPass123! (works, verified via API and UI)",
+  "context_for_next_testing_agent": "Run `pytest /app/backend/tests/backend_test.py -v` for full API regression (26 tests, all green). Frontend verified: landing CTA, /auth register+login, protected-route redirects for /quiz /activities /ideas /dashboard, dashboard stats testids (total-quizzes=3, ideas-shared), quiz full flow (option-N, next/previous-question-btn, quiz-score), ideas create+like, ContentHub tabs/search/category, logout clears localStorage token. ONLY remaining failure: ActivitiesPage drag-and-drop. After the dnd library swap, retest by dragging [data-testid^=\"drag-item-\"] into [data-testid^=\"drop-zone-\"] (keyboard drag: focus item, Space, ArrowRight, Space works with @hello-pangea/dnd) and assert [data-testid=\"activity-score\"] appears after check-answers-btn.",
+  "rca_of_the_issue": "React 19 stopped applying defaultProps to function components. react-beautiful-dnd@13.1.1 defines Droppable's isDropDisabled/isCombineEnabled/ignoreContainerClipping via defaultProps, so they arrive as undefined and the library's invariant ('isDropDisabled must be a boolean') throws during Droppable validation, disabling the DragDropContext. Reproduction: log in, open /activities, start any activity, open console -> 10 rbd invariant errors; attempt any mouse or keyboard drag -> nothing drops, Check Answers stays disabled. Mitigation: migrate to @hello-pangea/dnd (drop-in) or pass explicit boolean props."
+}

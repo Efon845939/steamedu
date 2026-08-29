@@ -16,7 +16,8 @@ const Navbar = () => {
   };
 
   const isActive = (path) => {
-    return location.pathname === path || location.pathname.startsWith(path);
+    if (path === '/') return location.pathname === '/';
+    return location.pathname === path || location.pathname.startsWith(path + '/');
   };
 
   const NavLink = ({ to, children, onClick }) => (
@@ -124,7 +125,7 @@ const Navbar = () => {
                     <button
                       onClick={handleLogout}
                       className="w-full text-left px-3 py-2 text-sm font-medium text-emerald-600 hover:bg-emerald-50 rounded-lg"
-                      data-testid="mobile-logout-btn"
+                      data-testid="logout-btn-mobile"
                     >
                       Logout
                     </button>

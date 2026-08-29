@@ -98,24 +98,24 @@ const Dashboard = () => {
 
           <Card className="bg-white/70 backdrop-blur-sm border-2 border-transparent hover:border-emerald-200 transition-all duration-300">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Learning Progress</CardTitle>
+              <CardTitle className="text-sm font-medium">Learning Progress (Demo)</CardTitle>
               <span className="text-2xl">📊</span>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-blue-600">65%</div>
               <Progress value={65} className="mt-2" />
-              <p className="text-xs text-muted-foreground mt-1">Keep going!</p>
+              <p className="text-xs text-muted-foreground mt-1">Sample progress bar</p>
             </CardContent>
           </Card>
 
           <Card className="bg-white/70 backdrop-blur-sm border-2 border-transparent hover:border-emerald-200 transition-all duration-300">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Streak</CardTitle>
+              <CardTitle className="text-sm font-medium">Streak (Demo)</CardTitle>
               <span className="text-2xl">🔥</span>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-orange-600">7</div>
-              <p className="text-xs text-muted-foreground">Days learning</p>
+              <p className="text-xs text-muted-foreground">Sample streak counter</p>
             </CardContent>
           </Card>
         </div>

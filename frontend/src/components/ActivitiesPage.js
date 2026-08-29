@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
+import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import axios from 'axios';
 
 const ActivitiesPage = () => {
@@ -429,7 +429,7 @@ const ActivitiesPage = () => {
         {/* Filters */}
         <div className="flex flex-wrap gap-4 justify-center mb-8">
           <Select value={filter} onValueChange={setFilter}>
-            <SelectTrigger className="w-48">
+            <SelectTrigger className="w-48" data-testid="activity-filter-select">
               <SelectValue placeholder="Filter by..." />
             </SelectTrigger>
             <SelectContent>

@@ -189,17 +189,26 @@ async def create_quiz(quiz_data: QuizCreate, current_user: User = Depends(get_cu
     await db.quizzes.insert_one(quiz.dict())
     return quiz
 
+def _strip_correct_answers(quiz: dict) -> dict:
+    """Remove correct_answer from questions before returning to clients."""
+    q = dict(quiz)
+    q["questions"] = [
+        {k: v for k, v in question.items() if k != "correct_answer"}
+        for question in quiz.get("questions", [])
+    ]
+    return q
+
 @api_router.get("/quizzes", response_model=List[Quiz])
 async def get_quizzes():
     quizzes = await db.quizzes.find().to_list(100)
-    return [Quiz(**quiz) for quiz in quizzes]
+    return [Quiz(**_strip_correct_answers(quiz)) for quiz in quizzes]
 
 @api_router.get("/quizzes/{quiz_id}", response_model=Quiz)
 async def get_quiz(quiz_id: str):
     quiz = await db.quizzes.find_one({"id": quiz_id})
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found")
-    return Quiz(**quiz)
+    return Quiz(**_strip_correct_answers(quiz))
 
 @api_router.post("/quizzes/{quiz_id}/attempt", response_model=QuizAttempt)
 async def submit_quiz_attempt(quiz_id: str, attempt_data: dict, current_user: User = Depends(get_current_user)):
@@ -268,57 +277,134 @@ async def get_activities(subject: Optional[str] = None, difficulty: Optional[str
     activities = await db.activities.find(query).to_list(50)
     return [Activity(**activity) for activity in activities]
 
-# Seed some sample data
+# Seed some sample data (idempotent - clears and re-seeds). Auth-protected.
 @api_router.post("/seed-data")
-async def seed_sample_data():
-    # Sample quiz
-    sample_quiz = {
-        "id": str(uuid.uuid4()),
-        "title": "Basic Science Quiz",
-        "description": "Test your knowledge of basic science concepts",
-        "questions": [
-            {
-                "question": "What is the chemical symbol for water?",
-                "options": ["H2O", "O2", "CO2", "NaCl"],
-                "correct_answer": "H2O"
-            },
-            {
-                "question": "Which planet is closest to the Sun?",
-                "options": ["Venus", "Mercury", "Earth", "Mars"],
-                "correct_answer": "Mercury"
-            }
-        ],
-        "created_by": "system",
-        "created_at": datetime.now(timezone.utc)
-    }
-    
-    # Sample activity
-    sample_activity = {
-        "id": str(uuid.uuid4()),
-        "title": "Solar System Matching",
-        "description": "Match planets with their characteristics",
-        "type": "matching",
-        "content": {
-            "items": [
-                {"id": "mercury", "text": "Mercury", "match": "closest-to-sun"},
-                {"id": "earth", "text": "Earth", "match": "has-life"},
-                {"id": "jupiter", "text": "Jupiter", "match": "largest-planet"}
+async def seed_sample_data(current_user: User = Depends(get_current_user)):
+    # Clear existing seed data to keep the demo clean
+    await db.quizzes.delete_many({"created_by": "system"})
+    await db.activities.delete_many({})
+
+    sample_quizzes = [
+        {
+            "id": str(uuid.uuid4()),
+            "title": "Basic Science Quiz",
+            "description": "Test your knowledge of core science concepts",
+            "questions": [
+                {"question": "What is the chemical symbol for water?", "options": ["H2O", "O2", "CO2", "NaCl"], "correct_answer": "H2O"},
+                {"question": "Which planet is closest to the Sun?", "options": ["Venus", "Mercury", "Earth", "Mars"], "correct_answer": "Mercury"},
+                {"question": "What gas do plants absorb from the atmosphere for photosynthesis?", "options": ["Oxygen", "Nitrogen", "Carbon Dioxide", "Hydrogen"], "correct_answer": "Carbon Dioxide"},
+                {"question": "Which part of the cell contains the DNA?", "options": ["Cytoplasm", "Nucleus", "Ribosome", "Mitochondria"], "correct_answer": "Nucleus"},
             ],
-            "matches": [
-                {"id": "closest-to-sun", "text": "Closest to the Sun"},
-                {"id": "has-life", "text": "Has life"},
-                {"id": "largest-planet", "text": "Largest planet"}
-            ]
+            "created_by": "system",
+            "created_at": datetime.now(timezone.utc),
         },
-        "difficulty": "Easy",
-        "subject": "Science",
-        "created_at": datetime.now(timezone.utc)
+        {
+            "id": str(uuid.uuid4()),
+            "title": "Mathematics Challenge",
+            "description": "Sharpen your math skills across algebra and geometry",
+            "questions": [
+                {"question": "What is the value of π (pi) rounded to 2 decimal places?", "options": ["3.12", "3.14", "3.16", "3.18"], "correct_answer": "3.14"},
+                {"question": "Solve: 12 × 8 = ?", "options": ["86", "94", "96", "104"], "correct_answer": "96"},
+                {"question": "The sum of interior angles in a triangle is:", "options": ["90°", "180°", "270°", "360°"], "correct_answer": "180°"},
+                {"question": "What is the square root of 144?", "options": ["10", "11", "12", "14"], "correct_answer": "12"},
+            ],
+            "created_by": "system",
+            "created_at": datetime.now(timezone.utc),
+        },
+        {
+            "id": str(uuid.uuid4()),
+            "title": "Technology & Engineering",
+            "description": "How well do you know computing and engineering concepts?",
+            "questions": [
+                {"question": "What does CPU stand for?", "options": ["Central Processing Unit", "Computer Personal Unit", "Central Program Unit", "Control Processing Utility"], "correct_answer": "Central Processing Unit"},
+                {"question": "Which language is primarily used to style web pages?", "options": ["HTML", "CSS", "Python", "SQL"], "correct_answer": "CSS"},
+                {"question": "A bridge that supports weight through arches is called:", "options": ["Beam bridge", "Arch bridge", "Cable-stayed bridge", "Truss bridge"], "correct_answer": "Arch bridge"},
+            ],
+            "created_by": "system",
+            "created_at": datetime.now(timezone.utc),
+        },
+    ]
+
+    sample_activities = [
+        {
+            "id": str(uuid.uuid4()),
+            "title": "Solar System Matching",
+            "description": "Match planets with their characteristics",
+            "type": "matching",
+            "content": {
+                "items": [
+                    {"id": "mercury", "text": "Mercury", "match": "closest-to-sun"},
+                    {"id": "earth", "text": "Earth", "match": "has-life"},
+                    {"id": "jupiter", "text": "Jupiter", "match": "largest-planet"},
+                    {"id": "mars", "text": "Mars", "match": "red-planet"},
+                ],
+                "matches": [
+                    {"id": "closest-to-sun", "text": "Closest to the Sun"},
+                    {"id": "has-life", "text": "Has life"},
+                    {"id": "largest-planet", "text": "Largest planet"},
+                    {"id": "red-planet", "text": "The Red Planet"},
+                ],
+            },
+            "difficulty": "Easy",
+            "subject": "Science",
+            "created_at": datetime.now(timezone.utc),
+        },
+        {
+            "id": str(uuid.uuid4()),
+            "title": "Math Operations",
+            "description": "Match equations with their results",
+            "type": "matching",
+            "content": {
+                "items": [
+                    {"id": "eq1", "text": "15 + 27", "match": "result1"},
+                    {"id": "eq2", "text": "8 × 9", "match": "result2"},
+                    {"id": "eq3", "text": "100 ÷ 4", "match": "result3"},
+                    {"id": "eq4", "text": "7²", "match": "result4"},
+                ],
+                "matches": [
+                    {"id": "result1", "text": "42"},
+                    {"id": "result2", "text": "72"},
+                    {"id": "result3", "text": "25"},
+                    {"id": "result4", "text": "49"},
+                ],
+            },
+            "difficulty": "Medium",
+            "subject": "Mathematics",
+            "created_at": datetime.now(timezone.utc),
+        },
+        {
+            "id": str(uuid.uuid4()),
+            "title": "Engineering Materials",
+            "description": "Match materials with their key properties",
+            "type": "matching",
+            "content": {
+                "items": [
+                    {"id": "steel", "text": "Steel", "match": "strong-metal"},
+                    {"id": "rubber", "text": "Rubber", "match": "flexible-material"},
+                    {"id": "glass", "text": "Glass", "match": "transparent-brittle"},
+                    {"id": "wood", "text": "Wood", "match": "organic-renewable"},
+                ],
+                "matches": [
+                    {"id": "strong-metal", "text": "Strong and durable metal"},
+                    {"id": "flexible-material", "text": "Flexible and elastic"},
+                    {"id": "transparent-brittle", "text": "Transparent but fragile"},
+                    {"id": "organic-renewable", "text": "Natural and renewable"},
+                ],
+            },
+            "difficulty": "Hard",
+            "subject": "Engineering",
+            "created_at": datetime.now(timezone.utc),
+        },
+    ]
+
+    await db.quizzes.insert_many(sample_quizzes)
+    await db.activities.insert_many(sample_activities)
+
+    return {
+        "message": "Sample data seeded successfully",
+        "quizzes_added": len(sample_quizzes),
+        "activities_added": len(sample_activities),
     }
-    
-    await db.quizzes.insert_one(sample_quiz)
-    await db.activities.insert_one(sample_activity)
-    
-    return {"message": "Sample data seeded successfully"}
 
 # Include the router in the main app
 app.include_router(api_router)

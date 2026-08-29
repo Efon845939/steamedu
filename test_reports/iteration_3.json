@@ -1,0 +1,33 @@
+{
+  "summary": "Retested all 5 fixes from iteration_2 plus regression on core flows. Backend: 29/29 pytest tests pass (auth, quizzes, attempts, activities, ideas, seed). Frontend (Playwright, desktop 1920x1080 + mobile 390x844): drag-and-drop matching now works with @hello-pangea/dnd (items dropped into all 4 zones, check-answers-btn enabled, activity-score = 50% matching actual correctness, retry/exit work); navbar active highlight correct on all 6 routes (exactly one link highlighted, Home no longer highlighted elsewhere); ContentHub CTAs navigate to /activities and /quiz; POST /api/seed-data returns 403 anonymously / 401 with bad token / 200 with valid Bearer; GET /api/quizzes and GET /api/quizzes/{id} no longer contain correct_answer on any question while POST attempt still scores correctly (verified 100% and partial scores using answer key read directly from MongoDB). Regression: teststudent login OK, dashboard shows 3 quizzes + Demo-labelled progress/streak, quiz take flow scored 25% (1/4) end-to-end, Ideas Hub create + like increment (0 -> 1) work on both desktop and mobile.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Activities matching board", "issues": ["Dropped source items remain visible in the left 'Items to Match' column at 50% opacity, which can look like a duplicate/stuck item; consider hiding or marking them 'matched'"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Optional: Ideas collection is now empty after QA cleanup (previous TEST_ prefixed demo ideas were removed). Re-seed demo ideas if the dashboard 'Ideas Shared' metric should be non-zero for demos.",
+    "Optional polish: hide/flag already-matched items in the Activities drag column"
+  ],
+  "critical_code_review_comments": [
+    "_strip_correct_answers is applied only to GET /quizzes and GET /quizzes/{id}; POST /api/quizzes (create) echoes back the submitted quiz including correct_answer. Acceptable (creator owns data) but worth confirming intent.",
+    "Quiz.questions is List[dict] with no per-question schema validation, so a malformed question payload can be stored (no correct_answer -> attempt scoring silently gives 0). Consider a QuizQuestion Pydantic model.",
+    "POST /api/quizzes/{id}/attempt takes a raw dict body (attempt_data) instead of a Pydantic model - no validation of answers shape.",
+    "Ideas 'likes' still has no per-user tracking (deferred as agreed) - a single user can like repeatedly."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py",
+    "/app/frontend/src/components/IdeasPage.js"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Created and then deleted TEST_QA ideas via /app/backend/tests/cleanup_test_data.py; seeded quizzes/activities untouched (3 each).",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "teststudent / TestPass123!",
+  "context_for_next_testing_agent": "backend_test.py now has 29 tests; correct answers are no longer exposed by the API so scoring tests use a session fixture (quiz_answer_key) that reads quizzes straight from MongoDB via pymongo. Seed endpoint tests assert 401/403 anonymously and 200 with Bearer. Added data-testid=idea-card-{id} to IdeasPage cards. Drag-and-drop can be automated with manual mouse.move stepping (12 steps, ~40ms each) between [data-testid^=drag-item-] and [data-testid^=drop-zone-]. Run /app/backend/tests/cleanup_test_data.py after idea-creation tests (note: it deletes ALL ideas whose title starts with TEST_).",
+  "rca_of_the_issue": "All five previously reported defects are resolved: the DnD library swap to @hello-pangea/dnd restored React 19 compatibility; Navbar isActive now exact-matches '/'; ContentHub CTAs wired to navigate(); /api/seed-data guarded by get_current_user; _strip_correct_answers removes answer keys from GET quiz responses while submit_quiz_attempt still reads correct_answer from Mongo for server-side scoring."
+}
