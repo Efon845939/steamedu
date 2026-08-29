@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status
+from fastapi import FastAPI, APIRouter, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -9,188 +9,277 @@ from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr
 from typing import List, Optional
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date
 import jwt
-from passlib.hash import bcrypt
 import bcrypt as bcrypt_lib
+
+from seed_data import QUIZZES, ACTIVITIES, CONTENT_ITEMS, DEMO_IDEAS
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# MongoDB connection
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-# JWT Configuration
-SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'your-secret-key-change-in-production')
+SECRET_KEY = os.environ['JWT_SECRET_KEY']
+TEACHER_SIGNUP_CODE = os.environ['TEACHER_SIGNUP_CODE']
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7
 
-# Create the main app without a prefix
+SUBJECTS = ["Science", "Technology", "Engineering", "Arts", "Mathematics"]
+AGE_GROUPS = ["13-15", "16-18", "18+"]
+ACTIVITY_POINTS = 50
+TOURNAMENT_POINTS = 30
+TOURNAMENT_WIN_BONUS = 100
+VERIFY_MIN_STUDENTS = 2
+VERIFY_MIN_CHALLENGES = 3
+
 app = FastAPI(title="STEAM Education Platform API")
-
-# Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
-
-# Security
 security = HTTPBearer()
 
-# Models
+
+# ---------------- Models ----------------
 class User(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     email: EmailStr
     username: str
     full_name: str
+    role: str = "student"
+    age: Optional[int] = None
+    age_group: Optional[str] = None
+    teacher_id: Optional[str] = None
+    teacher_name: Optional[str] = None
+    verified: bool = False
+    points: int = 0
+    streak_days: int = 0
+    last_active: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     is_active: bool = True
+
 
 class UserCreate(BaseModel):
     email: EmailStr
     username: str
     password: str
     full_name: str
+    role: str = "student"
+    age: Optional[int] = None
+    teacher_code: Optional[str] = None
+
 
 class UserLogin(BaseModel):
     username: str
     password: str
 
+
 class Token(BaseModel):
     access_token: str
     token_type: str
+
 
 class Quiz(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     title: str
     description: str
+    subject: str = "General"
+    age_groups: List[str] = ["all"]
     questions: List[dict]
     created_by: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-class QuizCreate(BaseModel):
-    title: str
-    description: str
-    questions: List[dict]
-
-class QuizAttempt(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    quiz_id: str
-    user_id: str
-    answers: List[dict]
-    score: int
-    completed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class IdeaShare(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     title: str
     description: str
-    category: str  # Science, Technology, Engineering, Art, Mathematics
+    category: str
     author_id: str
     author_name: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     likes: int = 0
+    liked_by: List[str] = []
+
 
 class IdeaShareCreate(BaseModel):
     title: str
     description: str
     category: str
 
+
+class CommentCreate(BaseModel):
+    text: str
+
+
 class Activity(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     title: str
     description: str
-    type: str  # drag-drop, matching, etc.
+    type: str
     content: dict
-    difficulty: str  # Easy, Medium, Hard
-    subject: str  # Science, Math, etc.
+    difficulty: str
+    subject: str
+    age_groups: List[str] = ["all"]
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-# Utility Functions
+
+class ActivityCompletion(BaseModel):
+    score: int
+
+
+class MessageCreate(BaseModel):
+    recipient_id: str
+    text: str
+
+
+class ChallengeCreate(BaseModel):
+    title: str
+    description: str = ""
+    type: str  # "quiz" | "task"
+    quiz_id: Optional[str] = None
+    points: int = 20
+
+
+class TournamentCreate(BaseModel):
+    title: str
+    description: str = ""
+    subject: str
+    age_group: str = "all"  # "all" | "13-15" | "16-18" | "18+"
+    scope: str = "open"  # "open" | "class"
+    quiz_id: str
+    duration_days: int = 7
+
+
+# ---------------- Utils ----------------
 def create_access_token(data: dict):
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
 
 def hash_password(password: str) -> str:
-    # Truncate password to 72 bytes for bcrypt compatibility
     password_bytes = password.encode('utf-8')[:72]
-    salt = bcrypt_lib.gensalt()
-    return bcrypt_lib.hashpw(password_bytes, salt).decode('utf-8')
+    return bcrypt_lib.hashpw(password_bytes, bcrypt_lib.gensalt()).decode('utf-8')
+
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    # Truncate password to 72 bytes for bcrypt compatibility
     password_bytes = plain_password.encode('utf-8')[:72]
     return bcrypt_lib.checkpw(password_bytes, hashed_password.encode('utf-8'))
 
+
+def age_to_group(age: int) -> str:
+    if age <= 15:
+        return "13-15"
+    if age <= 18:
+        return "16-18"
+    return "18+"
+
+
+def safe_user(u: dict) -> dict:
+    return {
+        "id": u["id"], "username": u["username"], "full_name": u["full_name"],
+        "role": u.get("role", "student"), "age_group": u.get("age_group"),
+        "verified": u.get("verified", False), "teacher_id": u.get("teacher_id"),
+        "points": u.get("points", 0), "streak_days": u.get("streak_days", 0),
+    }
+
+
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     try:
-        token = credentials.credentials
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
+        payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
+        username = payload.get("sub")
         if username is None:
             raise HTTPException(status_code=401, detail="Invalid authentication")
-        
         user = await db.users.find_one({"username": username})
         if user is None:
             raise HTTPException(status_code=401, detail="User not found")
-        
         return User(**user)
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid authentication")
 
-# Authentication Routes
+
+async def require_teacher(current_user: User = Depends(get_current_user)):
+    if current_user.role != "teacher":
+        raise HTTPException(status_code=403, detail="Teacher access required")
+    return current_user
+
+
+async def award_points(user_id: str, pts: int):
+    if pts:
+        await db.users.update_one({"id": user_id}, {"$inc": {"points": pts}})
+
+
+async def touch_streak(user_id: str) -> int:
+    u = await db.users.find_one({"id": user_id})
+    today = date.today().isoformat()
+    if u.get("last_active") == today:
+        return u.get("streak_days", 0)
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    streak = (u.get("streak_days", 0) + 1) if u.get("last_active") == yesterday else 1
+    await db.users.update_one({"id": user_id}, {"$set": {"streak_days": streak, "last_active": today}})
+    return streak
+
+
+async def check_teacher_verification(teacher_id: str):
+    students = await db.users.count_documents({"teacher_id": teacher_id})
+    challenges = await db.challenges.count_documents({"teacher_id": teacher_id})
+    if students >= VERIFY_MIN_STUDENTS and challenges >= VERIFY_MIN_CHALLENGES:
+        await db.users.update_one({"id": teacher_id, "verified": False}, {"$set": {"verified": True}})
+
+
+def age_group_query(age_group: Optional[str]) -> dict:
+    if age_group and age_group != "all":
+        return {"age_groups": {"$in": [age_group, "all"]}}
+    return {}
+
+
+# ---------------- Auth ----------------
 @api_router.post("/auth/register", response_model=User)
 async def register(user_data: UserCreate):
-    # Check if user already exists
-    existing_user = await db.users.find_one({
-        "$or": [
-            {"email": user_data.email},
-            {"username": user_data.username}
-        ]
-    })
-    
-    if existing_user:
+    if user_data.role not in ("student", "teacher"):
+        raise HTTPException(status_code=400, detail="Role must be 'student' or 'teacher'")
+    if user_data.role == "teacher":
+        if user_data.teacher_code != TEACHER_SIGNUP_CODE:
+            raise HTTPException(status_code=403, detail="Invalid teacher signup code")
+    else:
+        if user_data.age is None or user_data.age < 10 or user_data.age > 100:
+            raise HTTPException(status_code=400, detail="Students must provide an age between 10 and 100")
+
+    existing = await db.users.find_one({"$or": [{"email": user_data.email}, {"username": user_data.username}]})
+    if existing:
         raise HTTPException(status_code=400, detail="Email or username already registered")
-    
-    # Create new user
-    hashed_password = hash_password(user_data.password)
+
     user = User(
         email=user_data.email,
         username=user_data.username,
-        full_name=user_data.full_name
+        full_name=user_data.full_name,
+        role=user_data.role,
+        age=user_data.age if user_data.role == "student" else None,
+        age_group=age_to_group(user_data.age) if user_data.role == "student" else None,
     )
-    
     user_dict = user.dict()
-    user_dict["password"] = hashed_password
-    
+    user_dict["password"] = hash_password(user_data.password)
     await db.users.insert_one(user_dict)
     return user
+
 
 @api_router.post("/auth/login", response_model=Token)
 async def login(user_data: UserLogin):
     user = await db.users.find_one({"username": user_data.username})
-    
     if not user or not verify_password(user_data.password, user["password"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    access_token = create_access_token(data={"sub": user["username"]})
-    return Token(access_token=access_token, token_type="bearer")
+    return Token(access_token=create_access_token({"sub": user["username"]}), token_type="bearer")
+
 
 @api_router.get("/auth/me", response_model=User)
 async def get_current_user_info(current_user: User = Depends(get_current_user)):
     return current_user
 
-# Quiz Routes
-@api_router.post("/quizzes", response_model=Quiz)
-async def create_quiz(quiz_data: QuizCreate, current_user: User = Depends(get_current_user)):
-    quiz = Quiz(**quiz_data.dict(), created_by=current_user.id)
-    await db.quizzes.insert_one(quiz.dict())
-    return quiz
 
+# ---------------- Quizzes ----------------
 def _strip_correct_answers(quiz: dict) -> dict:
-    """Remove correct_answer from questions before returning to clients."""
     q = dict(quiz)
     q["questions"] = [
         {k: v for k, v in question.items() if k != "correct_answer"}
@@ -198,10 +287,15 @@ def _strip_correct_answers(quiz: dict) -> dict:
     ]
     return q
 
+
 @api_router.get("/quizzes", response_model=List[Quiz])
-async def get_quizzes():
-    quizzes = await db.quizzes.find().to_list(100)
-    return [Quiz(**_strip_correct_answers(quiz)) for quiz in quizzes]
+async def get_quizzes(subject: Optional[str] = None, age_group: Optional[str] = None):
+    query = age_group_query(age_group)
+    if subject:
+        query["subject"] = subject
+    quizzes = await db.quizzes.find(query).to_list(200)
+    return [Quiz(**_strip_correct_answers(q)) for q in quizzes]
+
 
 @api_router.get("/quizzes/{quiz_id}", response_model=Quiz)
 async def get_quiz(quiz_id: str):
@@ -210,203 +304,806 @@ async def get_quiz(quiz_id: str):
         raise HTTPException(status_code=404, detail="Quiz not found")
     return Quiz(**_strip_correct_answers(quiz))
 
-@api_router.post("/quizzes/{quiz_id}/attempt", response_model=QuizAttempt)
+
+def _grade(quiz: dict, answers: list) -> int:
+    correct = 0
+    total = len(quiz["questions"])
+    for i, answer in enumerate(answers):
+        if i < total and answer.get("selected") == quiz["questions"][i].get("correct_answer"):
+            correct += 1
+    return int((correct / total) * 100) if total else 0
+
+
+@api_router.post("/quizzes/{quiz_id}/attempt")
 async def submit_quiz_attempt(quiz_id: str, attempt_data: dict, current_user: User = Depends(get_current_user)):
     quiz = await db.quizzes.find_one({"id": quiz_id})
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found")
-    
-    # Calculate score (basic implementation)
-    correct_answers = 0
-    total_questions = len(quiz["questions"])
-    
-    for i, answer in enumerate(attempt_data.get("answers", [])):
-        if i < len(quiz["questions"]):
-            correct_answer = quiz["questions"][i].get("correct_answer")
-            if answer.get("selected") == correct_answer:
-                correct_answers += 1
-    
-    score = int((correct_answers / total_questions) * 100) if total_questions > 0 else 0
-    
-    attempt = QuizAttempt(
-        quiz_id=quiz_id,
-        user_id=current_user.id,
-        answers=attempt_data.get("answers", []),
-        score=score
-    )
-    
-    await db.quiz_attempts.insert_one(attempt.dict())
-    return attempt
 
-# Ideas Sharing Routes
-@api_router.post("/ideas", response_model=IdeaShare)
-async def create_idea(idea_data: IdeaShareCreate, current_user: User = Depends(get_current_user)):
-    idea = IdeaShare(
-        **idea_data.dict(),
-        author_id=current_user.id,
-        author_name=current_user.full_name
-    )
-    await db.ideas.insert_one(idea.dict())
-    return idea
+    answers = attempt_data.get("answers", [])
+    score = _grade(quiz, answers)
+    first_attempt = await db.quiz_attempts.find_one({"quiz_id": quiz_id, "user_id": current_user.id}) is None
 
-@api_router.get("/ideas", response_model=List[IdeaShare])
-async def get_ideas(category: Optional[str] = None):
-    query = {"category": category} if category else {}
-    ideas = await db.ideas.find(query).sort("created_at", -1).to_list(50)
-    return [IdeaShare(**idea) for idea in ideas]
+    attempt = {
+        "id": str(uuid.uuid4()), "quiz_id": quiz_id, "user_id": current_user.id,
+        "quiz_title": quiz["title"], "subject": quiz.get("subject", "General"),
+        "answers": answers, "score": score,
+        "completed_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.quiz_attempts.insert_one(attempt)
 
-@api_router.post("/ideas/{idea_id}/like")
-async def like_idea(idea_id: str, current_user: User = Depends(get_current_user)):
-    result = await db.ideas.update_one(
-        {"id": idea_id},
-        {"$inc": {"likes": 1}}
-    )
-    if result.modified_count == 0:
-        raise HTTPException(status_code=404, detail="Idea not found")
-    return {"message": "Idea liked successfully"}
+    points_earned = score if first_attempt else 0
+    await award_points(current_user.id, points_earned)
+    streak = await touch_streak(current_user.id)
 
-# Activities Routes
+    challenge_completed = None
+    if current_user.role == "student" and current_user.teacher_id:
+        today = date.today().isoformat()
+        chs = await db.challenges.find({
+            "teacher_id": current_user.teacher_id, "type": "quiz",
+            "quiz_id": quiz_id, "date": today,
+        }).to_list(20)
+        for ch in chs:
+            if await db.challenge_completions.find_one({"challenge_id": ch["id"], "student_id": current_user.id}):
+                continue
+            await db.challenge_completions.insert_one({
+                "id": str(uuid.uuid4()), "challenge_id": ch["id"], "student_id": current_user.id,
+                "score": score, "completed_at": datetime.now(timezone.utc).isoformat(),
+            })
+            await award_points(current_user.id, ch.get("points", 20))
+            points_earned += ch.get("points", 20)
+            challenge_completed = ch["title"]
+
+    attempt.pop("_id", None)
+    return {**attempt, "points_earned": points_earned, "streak_days": streak,
+            "first_attempt": first_attempt, "challenge_completed": challenge_completed}
+
+
+# ---------------- Activities ----------------
 @api_router.get("/activities", response_model=List[Activity])
-async def get_activities(subject: Optional[str] = None, difficulty: Optional[str] = None):
-    query = {}
+async def get_activities(subject: Optional[str] = None, difficulty: Optional[str] = None, age_group: Optional[str] = None):
+    query = age_group_query(age_group)
     if subject:
         query["subject"] = subject
     if difficulty:
         query["difficulty"] = difficulty
-    
-    activities = await db.activities.find(query).to_list(50)
-    return [Activity(**activity) for activity in activities]
+    activities = await db.activities.find(query).to_list(200)
+    return [Activity(**a) for a in activities]
 
-# Seed some sample data (idempotent - clears and re-seeds). Auth-protected.
-@api_router.post("/seed-data")
-async def seed_sample_data(current_user: User = Depends(get_current_user)):
-    # Clear existing seed data to keep the demo clean
-    await db.quizzes.delete_many({"created_by": "system"})
-    await db.activities.delete_many({})
 
-    sample_quizzes = [
-        {
-            "id": str(uuid.uuid4()),
-            "title": "Basic Science Quiz",
-            "description": "Test your knowledge of core science concepts",
-            "questions": [
-                {"question": "What is the chemical symbol for water?", "options": ["H2O", "O2", "CO2", "NaCl"], "correct_answer": "H2O"},
-                {"question": "Which planet is closest to the Sun?", "options": ["Venus", "Mercury", "Earth", "Mars"], "correct_answer": "Mercury"},
-                {"question": "What gas do plants absorb from the atmosphere for photosynthesis?", "options": ["Oxygen", "Nitrogen", "Carbon Dioxide", "Hydrogen"], "correct_answer": "Carbon Dioxide"},
-                {"question": "Which part of the cell contains the DNA?", "options": ["Cytoplasm", "Nucleus", "Ribosome", "Mitochondria"], "correct_answer": "Nucleus"},
-            ],
-            "created_by": "system",
-            "created_at": datetime.now(timezone.utc),
-        },
-        {
-            "id": str(uuid.uuid4()),
-            "title": "Mathematics Challenge",
-            "description": "Sharpen your math skills across algebra and geometry",
-            "questions": [
-                {"question": "What is the value of π (pi) rounded to 2 decimal places?", "options": ["3.12", "3.14", "3.16", "3.18"], "correct_answer": "3.14"},
-                {"question": "Solve: 12 × 8 = ?", "options": ["86", "94", "96", "104"], "correct_answer": "96"},
-                {"question": "The sum of interior angles in a triangle is:", "options": ["90°", "180°", "270°", "360°"], "correct_answer": "180°"},
-                {"question": "What is the square root of 144?", "options": ["10", "11", "12", "14"], "correct_answer": "12"},
-            ],
-            "created_by": "system",
-            "created_at": datetime.now(timezone.utc),
-        },
-        {
-            "id": str(uuid.uuid4()),
-            "title": "Technology & Engineering",
-            "description": "How well do you know computing and engineering concepts?",
-            "questions": [
-                {"question": "What does CPU stand for?", "options": ["Central Processing Unit", "Computer Personal Unit", "Central Program Unit", "Control Processing Utility"], "correct_answer": "Central Processing Unit"},
-                {"question": "Which language is primarily used to style web pages?", "options": ["HTML", "CSS", "Python", "SQL"], "correct_answer": "CSS"},
-                {"question": "A bridge that supports weight through arches is called:", "options": ["Beam bridge", "Arch bridge", "Cable-stayed bridge", "Truss bridge"], "correct_answer": "Arch bridge"},
-            ],
-            "created_by": "system",
-            "created_at": datetime.now(timezone.utc),
-        },
-    ]
+@api_router.post("/activities/{activity_id}/complete")
+async def complete_activity(activity_id: str, completion: ActivityCompletion, current_user: User = Depends(get_current_user)):
+    activity = await db.activities.find_one({"id": activity_id})
+    if not activity:
+        raise HTTPException(status_code=404, detail="Activity not found")
+    first = await db.activity_results.find_one({"activity_id": activity_id, "user_id": current_user.id}) is None
+    await db.activity_results.insert_one({
+        "id": str(uuid.uuid4()), "activity_id": activity_id, "user_id": current_user.id,
+        "activity_title": activity["title"], "subject": activity.get("subject", "General"),
+        "score": completion.score, "completed_at": datetime.now(timezone.utc).isoformat(),
+    })
+    points = ACTIVITY_POINTS if first else 0
+    await award_points(current_user.id, points)
+    streak = await touch_streak(current_user.id)
+    return {"points_earned": points, "streak_days": streak, "first_completion": first}
 
-    sample_activities = [
-        {
-            "id": str(uuid.uuid4()),
-            "title": "Solar System Matching",
-            "description": "Match planets with their characteristics",
-            "type": "matching",
-            "content": {
-                "items": [
-                    {"id": "mercury", "text": "Mercury", "match": "closest-to-sun"},
-                    {"id": "earth", "text": "Earth", "match": "has-life"},
-                    {"id": "jupiter", "text": "Jupiter", "match": "largest-planet"},
-                    {"id": "mars", "text": "Mars", "match": "red-planet"},
-                ],
-                "matches": [
-                    {"id": "closest-to-sun", "text": "Closest to the Sun"},
-                    {"id": "has-life", "text": "Has life"},
-                    {"id": "largest-planet", "text": "Largest planet"},
-                    {"id": "red-planet", "text": "The Red Planet"},
-                ],
-            },
-            "difficulty": "Easy",
-            "subject": "Science",
-            "created_at": datetime.now(timezone.utc),
-        },
-        {
-            "id": str(uuid.uuid4()),
-            "title": "Math Operations",
-            "description": "Match equations with their results",
-            "type": "matching",
-            "content": {
-                "items": [
-                    {"id": "eq1", "text": "15 + 27", "match": "result1"},
-                    {"id": "eq2", "text": "8 × 9", "match": "result2"},
-                    {"id": "eq3", "text": "100 ÷ 4", "match": "result3"},
-                    {"id": "eq4", "text": "7²", "match": "result4"},
-                ],
-                "matches": [
-                    {"id": "result1", "text": "42"},
-                    {"id": "result2", "text": "72"},
-                    {"id": "result3", "text": "25"},
-                    {"id": "result4", "text": "49"},
-                ],
-            },
-            "difficulty": "Medium",
-            "subject": "Mathematics",
-            "created_at": datetime.now(timezone.utc),
-        },
-        {
-            "id": str(uuid.uuid4()),
-            "title": "Engineering Materials",
-            "description": "Match materials with their key properties",
-            "type": "matching",
-            "content": {
-                "items": [
-                    {"id": "steel", "text": "Steel", "match": "strong-metal"},
-                    {"id": "rubber", "text": "Rubber", "match": "flexible-material"},
-                    {"id": "glass", "text": "Glass", "match": "transparent-brittle"},
-                    {"id": "wood", "text": "Wood", "match": "organic-renewable"},
-                ],
-                "matches": [
-                    {"id": "strong-metal", "text": "Strong and durable metal"},
-                    {"id": "flexible-material", "text": "Flexible and elastic"},
-                    {"id": "transparent-brittle", "text": "Transparent but fragile"},
-                    {"id": "organic-renewable", "text": "Natural and renewable"},
-                ],
-            },
-            "difficulty": "Hard",
-            "subject": "Engineering",
-            "created_at": datetime.now(timezone.utc),
-        },
-    ]
 
-    await db.quizzes.insert_many(sample_quizzes)
-    await db.activities.insert_many(sample_activities)
+# ---------------- Content ----------------
+@api_router.get("/content")
+async def get_content(subject: Optional[str] = None, type: Optional[str] = None, age_group: Optional[str] = None):
+    query = age_group_query(age_group)
+    if subject:
+        query["subject"] = subject
+    if type:
+        query["type"] = type
+    items = await db.content.find(query, {"_id": 0}).to_list(300)
+    return items
+
+
+@api_router.get("/content/{content_id}")
+async def get_content_item(content_id: str):
+    item = await db.content.find_one({"id": content_id}, {"_id": 0})
+    if not item:
+        raise HTTPException(status_code=404, detail="Content not found")
+    return item
+
+
+# ---------------- Ideas ----------------
+@api_router.post("/ideas", response_model=IdeaShare)
+async def create_idea(idea_data: IdeaShareCreate, current_user: User = Depends(get_current_user)):
+    idea = IdeaShare(**idea_data.dict(), author_id=current_user.id, author_name=current_user.full_name)
+    await db.ideas.insert_one(idea.dict())
+    return idea
+
+
+@api_router.get("/ideas")
+async def get_ideas(category: Optional[str] = None, sort: str = "new", current_user: User = Depends(get_current_user)):
+    query = {"category": category} if category else {}
+    sort_key = "likes" if sort == "popular" else "created_at"
+    ideas = await db.ideas.find(query, {"_id": 0}).sort(sort_key, -1).to_list(100)
+    result = []
+    for idea in ideas:
+        liked_by = idea.get("liked_by", [])
+        comments = await db.idea_comments.count_documents({"idea_id": idea["id"]})
+        result.append({**idea, "liked": current_user.id in liked_by, "comments_count": comments,
+                       "liked_by": []})
+    return result
+
+
+@api_router.get("/ideas/{idea_id}")
+async def get_idea(idea_id: str, current_user: User = Depends(get_current_user)):
+    idea = await db.ideas.find_one({"id": idea_id}, {"_id": 0})
+    if not idea:
+        raise HTTPException(status_code=404, detail="Idea not found")
+    comments = await db.idea_comments.find({"idea_id": idea_id}, {"_id": 0}).sort("created_at", 1).to_list(200)
+    liked_by = idea.get("liked_by", [])
+    idea["liked"] = current_user.id in liked_by
+    idea["liked_by"] = []
+    return {**idea, "comments": comments}
+
+
+@api_router.post("/ideas/{idea_id}/like")
+async def like_idea(idea_id: str, current_user: User = Depends(get_current_user)):
+    idea = await db.ideas.find_one({"id": idea_id})
+    if not idea:
+        raise HTTPException(status_code=404, detail="Idea not found")
+    liked_by = idea.get("liked_by", [])
+    if current_user.id in liked_by:
+        await db.ideas.update_one({"id": idea_id}, {"$pull": {"liked_by": current_user.id}, "$inc": {"likes": -1}})
+        return {"liked": False, "likes": idea.get("likes", 0) - 1}
+    await db.ideas.update_one({"id": idea_id}, {"$addToSet": {"liked_by": current_user.id}, "$inc": {"likes": 1}})
+    return {"liked": True, "likes": idea.get("likes", 0) + 1}
+
+
+@api_router.post("/ideas/{idea_id}/comments")
+async def add_comment(idea_id: str, comment: CommentCreate, current_user: User = Depends(get_current_user)):
+    if not comment.text.strip():
+        raise HTTPException(status_code=400, detail="Comment cannot be empty")
+    idea = await db.ideas.find_one({"id": idea_id})
+    if not idea:
+        raise HTTPException(status_code=404, detail="Idea not found")
+    doc = {
+        "id": str(uuid.uuid4()), "idea_id": idea_id, "author_id": current_user.id,
+        "author_name": current_user.full_name, "author_role": current_user.role,
+        "text": comment.text.strip(), "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.idea_comments.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+# ---------------- Chat & Mentorship ----------------
+@api_router.get("/users/search")
+async def search_users(q: str, current_user: User = Depends(get_current_user)):
+    if not q.strip():
+        return []
+    regex = {"$regex": q.strip(), "$options": "i"}
+    users = await db.users.find({
+        "id": {"$ne": current_user.id},
+        "$or": [{"username": regex}, {"full_name": regex}],
+    }).to_list(20)
+    return [safe_user(u) for u in users]
+
+
+@api_router.post("/chat/send")
+async def send_message(msg: MessageCreate, current_user: User = Depends(get_current_user)):
+    recipient = await db.users.find_one({"id": msg.recipient_id})
+    if not recipient:
+        raise HTTPException(status_code=404, detail="Recipient not found")
+    if not msg.text.strip():
+        raise HTTPException(status_code=400, detail="Message cannot be empty")
+    doc = {
+        "id": str(uuid.uuid4()), "sender_id": current_user.id, "sender_name": current_user.full_name,
+        "recipient_id": msg.recipient_id, "text": msg.text.strip(),
+        "created_at": datetime.now(timezone.utc).isoformat(), "read": False,
+    }
+    await db.messages.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@api_router.get("/chat/conversations")
+async def get_conversations(current_user: User = Depends(get_current_user)):
+    msgs = await db.messages.find({
+        "$or": [{"sender_id": current_user.id}, {"recipient_id": current_user.id}]
+    }, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    partners = {}
+    for m in msgs:
+        pid = m["recipient_id"] if m["sender_id"] == current_user.id else m["sender_id"]
+        if pid not in partners:
+            partners[pid] = {"last_message": m["text"], "last_at": m["created_at"], "unread": 0}
+        if m["recipient_id"] == current_user.id and not m.get("read"):
+            partners[pid]["unread"] += 1
+    if not partners:
+        return []
+    users = await db.users.find({"id": {"$in": list(partners.keys())}}).to_list(100)
+    user_map = {u["id"]: u for u in users}
+    result = []
+    for pid, info in partners.items():
+        if pid in user_map:
+            result.append({**safe_user(user_map[pid]), **info})
+    result.sort(key=lambda x: x["last_at"], reverse=True)
+    return result
+
+
+@api_router.get("/chat/with/{user_id}")
+async def get_messages_with(user_id: str, current_user: User = Depends(get_current_user)):
+    partner = await db.users.find_one({"id": user_id})
+    if not partner:
+        raise HTTPException(status_code=404, detail="User not found")
+    await db.messages.update_many(
+        {"sender_id": user_id, "recipient_id": current_user.id, "read": False},
+        {"$set": {"read": True}},
+    )
+    msgs = await db.messages.find({
+        "$or": [
+            {"sender_id": current_user.id, "recipient_id": user_id},
+            {"sender_id": user_id, "recipient_id": current_user.id},
+        ]
+    }, {"_id": 0}).sort("created_at", 1).to_list(500)
+    return {"partner": safe_user(partner), "messages": msgs}
+
+
+@api_router.post("/teacher/add-student/{student_id}")
+async def add_student(student_id: str, current_user: User = Depends(require_teacher)):
+    student = await db.users.find_one({"id": student_id})
+    if not student or student.get("role") != "student":
+        raise HTTPException(status_code=404, detail="Student not found")
+    if student.get("teacher_id") == current_user.id:
+        raise HTTPException(status_code=400, detail="Already your student")
+    await db.users.update_one(
+        {"id": student_id},
+        {"$set": {"teacher_id": current_user.id, "teacher_name": current_user.full_name}},
+    )
+    await check_teacher_verification(current_user.id)
+    student = await db.users.find_one({"id": student_id})
+    return safe_user(student)
+
+
+async def _student_stats(uid: str) -> dict:
+    attempts = await db.quiz_attempts.find({"user_id": uid}, {"_id": 0}).to_list(1000)
+    best = {}
+    for a in attempts:
+        best[a["quiz_id"]] = max(best.get(a["quiz_id"], 0), a["score"])
+    avg = round(sum(best.values()) / len(best)) if best else 0
+    results = await db.activity_results.find({"user_id": uid}, {"_id": 0}).to_list(1000)
+    return {"quizzes_completed": len(best), "avg_score": avg,
+            "activities_completed": len({r["activity_id"] for r in results}),
+            "attempts": attempts, "best": best}
+
+
+@api_router.get("/teacher/students")
+async def get_my_students(current_user: User = Depends(require_teacher)):
+    students = await db.users.find({"teacher_id": current_user.id}).to_list(200)
+    result = []
+    for s in students:
+        stats = await _student_stats(s["id"])
+        result.append({**safe_user(s), "last_active": s.get("last_active"),
+                       "quizzes_completed": stats["quizzes_completed"],
+                       "avg_score": stats["avg_score"],
+                       "activities_completed": stats["activities_completed"]})
+    return result
+
+
+@api_router.get("/teacher/verification")
+async def get_verification(current_user: User = Depends(require_teacher)):
+    students = await db.users.count_documents({"teacher_id": current_user.id})
+    challenges = await db.challenges.count_documents({"teacher_id": current_user.id})
+    await check_teacher_verification(current_user.id)
+    user = await db.users.find_one({"id": current_user.id})
+    return {"verified": user.get("verified", False), "students_count": students,
+            "challenges_count": challenges,
+            "requirements": {"min_students": VERIFY_MIN_STUDENTS, "min_challenges": VERIFY_MIN_CHALLENGES}}
+
+
+# ---------------- Stats ----------------
+async def _full_student_stats(user: dict) -> dict:
+    uid = user["id"]
+    ag = user.get("age_group")
+    base = await _student_stats(uid)
+
+    quiz_query = age_group_query(ag)
+    all_quizzes = await db.quizzes.find(quiz_query, {"_id": 0, "id": 1, "subject": 1}).to_list(500)
+    all_activities = await db.activities.find(quiz_query, {"_id": 0, "id": 1, "subject": 1}).to_list(500)
+    quiz_ids = {q["id"] for q in all_quizzes}
+    act_ids = {a["id"] for a in all_activities}
+
+    results = await db.activity_results.find({"user_id": uid}, {"_id": 0}).to_list(1000)
+    done_quizzes = set(base["best"].keys()) & quiz_ids
+    done_acts = {r["activity_id"] for r in results} & act_ids
+    valid_best = [s for qid, s in base["best"].items() if qid in quiz_ids]
+    avg_score = round(sum(valid_best) / len(valid_best)) if valid_best else 0
+
+    total = len(quiz_ids) + len(act_ids)
+    progress = min(100, round((len(done_quizzes) + len(done_acts)) / total * 100)) if total else 0
+
+    subject_progress = []
+    for subj in SUBJECTS:
+        sq = {q["id"] for q in all_quizzes if q["subject"] == subj}
+        sa = {a["id"] for a in all_activities if a["subject"] == subj}
+        s_total = len(sq) + len(sa)
+        s_done = len(done_quizzes & sq) + len(done_acts & sa)
+        subject_progress.append({"subject": subj, "completed": s_done, "total": s_total,
+                                 "pct": min(100, round(s_done / s_total * 100)) if s_total else 0})
+
+    ideas = await db.ideas.count_documents({"author_id": uid})
+    certs = await db.certificates.count_documents({"student_id": uid})
+    recent = sorted(base["attempts"], key=lambda a: str(a.get("completed_at", "")), reverse=True)[:5]
+    fresh = await db.users.find_one({"id": uid})
 
     return {
-        "message": "Sample data seeded successfully",
-        "quizzes_added": len(sample_quizzes),
-        "activities_added": len(sample_activities),
+        "role": "student", "points": fresh.get("points", 0), "streak_days": fresh.get("streak_days", 0),
+        "quizzes_completed": len(done_quizzes), "total_quizzes": len(quiz_ids),
+        "avg_score": avg_score,
+        "activities_completed": len(done_acts), "total_activities": len(act_ids),
+        "ideas_shared": ideas, "certificates": certs, "progress": progress,
+        "subject_progress": subject_progress,
+        "recent_attempts": [{"quiz_title": a.get("quiz_title", "Quiz"), "score": a["score"], "completed_at": str(a.get("completed_at", ""))} for a in recent],
+        "teacher_name": fresh.get("teacher_name"), "age_group": ag,
     }
 
-# Include the router in the main app
+
+@api_router.get("/stats/me")
+async def get_my_stats(current_user: User = Depends(get_current_user)):
+    if current_user.role == "teacher":
+        students = await db.users.count_documents({"teacher_id": current_user.id})
+        challenges = await db.challenges.count_documents({"teacher_id": current_user.id})
+        tournaments = await db.tournaments.count_documents({"teacher_id": current_user.id})
+        pro = await db.tournaments.count_documents({"teacher_id": current_user.id, "is_professional": True})
+        return {"role": "teacher", "verified": current_user.verified, "students_count": students,
+                "challenges_count": challenges, "tournaments_count": tournaments, "pro_tournaments": pro,
+                "requirements": {"min_students": VERIFY_MIN_STUDENTS, "min_challenges": VERIFY_MIN_CHALLENGES}}
+    return await _full_student_stats(current_user.dict())
+
+
+@api_router.get("/stats/student/{student_id}")
+async def get_student_stats(student_id: str, current_user: User = Depends(require_teacher)):
+    student = await db.users.find_one({"id": student_id})
+    if not student or student.get("teacher_id") != current_user.id:
+        raise HTTPException(status_code=403, detail="Not your student")
+    stats = await _full_student_stats(student)
+    return {**stats, "full_name": student["full_name"], "username": student["username"]}
+
+
+# ---------------- Challenges ----------------
+@api_router.post("/challenges")
+async def create_challenge(data: ChallengeCreate, current_user: User = Depends(require_teacher)):
+    if data.type not in ("quiz", "task"):
+        raise HTTPException(status_code=400, detail="Type must be 'quiz' or 'task'")
+    if data.type == "quiz":
+        if not data.quiz_id or not await db.quizzes.find_one({"id": data.quiz_id}):
+            raise HTTPException(status_code=404, detail="Linked quiz not found")
+    doc = {
+        "id": str(uuid.uuid4()), "teacher_id": current_user.id, "teacher_name": current_user.full_name,
+        "title": data.title, "description": data.description, "type": data.type,
+        "quiz_id": data.quiz_id if data.type == "quiz" else None,
+        "points": data.points, "date": date.today().isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.challenges.insert_one(doc)
+    await check_teacher_verification(current_user.id)
+    doc.pop("_id", None)
+    return doc
+
+
+@api_router.get("/challenges/mine")
+async def get_my_challenges(current_user: User = Depends(require_teacher)):
+    challenges = await db.challenges.find({"teacher_id": current_user.id}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    for ch in challenges:
+        ch["completions"] = await db.challenge_completions.count_documents({"challenge_id": ch["id"]})
+    return challenges
+
+
+@api_router.get("/challenges/today")
+async def get_todays_challenges(current_user: User = Depends(get_current_user)):
+    if current_user.role != "student" or not current_user.teacher_id:
+        return []
+    today = date.today().isoformat()
+    challenges = await db.challenges.find({"teacher_id": current_user.teacher_id, "date": today}, {"_id": 0}).to_list(50)
+    for ch in challenges:
+        ch["completed"] = await db.challenge_completions.find_one(
+            {"challenge_id": ch["id"], "student_id": current_user.id}) is not None
+        if ch.get("quiz_id"):
+            quiz = await db.quizzes.find_one({"id": ch["quiz_id"]})
+            ch["quiz_title"] = quiz["title"] if quiz else None
+    return challenges
+
+
+@api_router.post("/challenges/{challenge_id}/complete")
+async def complete_challenge(challenge_id: str, current_user: User = Depends(get_current_user)):
+    ch = await db.challenges.find_one({"id": challenge_id})
+    if not ch:
+        raise HTTPException(status_code=404, detail="Challenge not found")
+    if current_user.teacher_id != ch["teacher_id"]:
+        raise HTTPException(status_code=403, detail="This challenge is not from your teacher")
+    if ch["type"] == "quiz":
+        raise HTTPException(status_code=400, detail="Complete the linked quiz to finish this challenge")
+    if await db.challenge_completions.find_one({"challenge_id": challenge_id, "student_id": current_user.id}):
+        raise HTTPException(status_code=400, detail="Already completed")
+    await db.challenge_completions.insert_one({
+        "id": str(uuid.uuid4()), "challenge_id": challenge_id, "student_id": current_user.id,
+        "completed_at": datetime.now(timezone.utc).isoformat(),
+    })
+    await award_points(current_user.id, ch.get("points", 20))
+    streak = await touch_streak(current_user.id)
+    return {"points_earned": ch.get("points", 20), "streak_days": streak}
+
+
+# ---------------- Tournaments ----------------
+def _tournament_status(t: dict) -> str:
+    now = datetime.now(timezone.utc).isoformat()
+    if now < t["start_at"]:
+        return "upcoming"
+    if now <= t["end_at"]:
+        return "active"
+    return "ended"
+
+
+async def _finalize_tournament(t: dict):
+    if _tournament_status(t) != "ended" or t.get("finalized"):
+        return t
+    entries = await db.tournament_entries.find(
+        {"tournament_id": t["id"], "score": {"$ne": None}}).sort("score", -1).to_list(500)
+    update = {"finalized": True}
+    if entries:
+        winner = entries[0]
+        update["winner_id"] = winner["student_id"]
+        update["winner_name"] = winner["student_name"]
+        await db.certificates.insert_one({
+            "id": str(uuid.uuid4()), "student_id": winner["student_id"],
+            "student_name": winner["student_name"], "tournament_id": t["id"],
+            "tournament_title": t["title"], "subject": t["subject"],
+            "teacher_name": t["teacher_name"], "is_professional": t.get("is_professional", False),
+            "awarded_at": datetime.now(timezone.utc).isoformat(),
+        })
+        await award_points(winner["student_id"], TOURNAMENT_WIN_BONUS)
+    await db.tournaments.update_one({"id": t["id"]}, {"$set": update})
+    return {**t, **update}
+
+
+@api_router.post("/tournaments")
+async def create_tournament(data: TournamentCreate, current_user: User = Depends(require_teacher)):
+    if data.scope not in ("open", "class"):
+        raise HTTPException(status_code=400, detail="Scope must be 'open' or 'class'")
+    if data.scope == "open" and not current_user.verified:
+        raise HTTPException(status_code=403, detail="Only verified teachers can host open tournaments")
+    if not await db.quizzes.find_one({"id": data.quiz_id}):
+        raise HTTPException(status_code=404, detail="Linked quiz not found")
+    now = datetime.now(timezone.utc)
+    doc = {
+        "id": str(uuid.uuid4()), "title": data.title, "description": data.description,
+        "subject": data.subject, "age_group": data.age_group, "scope": data.scope,
+        "quiz_id": data.quiz_id, "teacher_id": current_user.id, "teacher_name": current_user.full_name,
+        "is_professional": current_user.verified,
+        "start_at": now.isoformat(), "end_at": (now + timedelta(days=max(1, data.duration_days))).isoformat(),
+        "finalized": False, "created_at": now.isoformat(),
+    }
+    await db.tournaments.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@api_router.get("/tournaments")
+async def get_tournaments(current_user: User = Depends(get_current_user)):
+    tournaments = await db.tournaments.find({}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    result = []
+    for t in tournaments:
+        t = await _finalize_tournament(t)
+        status = _tournament_status(t)
+        visible = (
+            t["scope"] == "open"
+            or t["teacher_id"] == current_user.id
+            or (current_user.role == "student" and current_user.teacher_id == t["teacher_id"])
+        )
+        if not visible:
+            continue
+        participants = await db.tournament_entries.count_documents({"tournament_id": t["id"]})
+        my_entry = None
+        if current_user.role == "student":
+            entry = await db.tournament_entries.find_one(
+                {"tournament_id": t["id"], "student_id": current_user.id}, {"_id": 0})
+            my_entry = entry
+        age_ok = t["age_group"] == "all" or t["age_group"] == current_user.age_group
+        scope_ok = t["scope"] == "open" or current_user.teacher_id == t["teacher_id"]
+        can_join = (current_user.role == "student" and status == "active"
+                    and my_entry is None and age_ok and scope_ok)
+        quiz = await db.quizzes.find_one({"id": t["quiz_id"]})
+        result.append({**t, "status": status, "participants": participants,
+                       "my_entry": my_entry, "can_join": can_join,
+                       "quiz_title": quiz["title"] if quiz else None})
+    return result
+
+
+@api_router.get("/tournaments/{tournament_id}")
+async def get_tournament(tournament_id: str, current_user: User = Depends(get_current_user)):
+    t = await db.tournaments.find_one({"id": tournament_id}, {"_id": 0})
+    if not t:
+        raise HTTPException(status_code=404, detail="Tournament not found")
+    t = await _finalize_tournament(t)
+    entries = await db.tournament_entries.find({"tournament_id": tournament_id}, {"_id": 0}).to_list(500)
+    ranking = sorted([e for e in entries if e["score"] is not None], key=lambda e: e["score"], reverse=True)
+    pending = [e for e in entries if e["score"] is None]
+    quiz = await db.quizzes.find_one({"id": t["quiz_id"]})
+    return {**t, "status": _tournament_status(t), "ranking": ranking, "pending": pending,
+            "participants": len(entries), "quiz_title": quiz["title"] if quiz else None}
+
+
+@api_router.post("/tournaments/{tournament_id}/join")
+async def join_tournament(tournament_id: str, current_user: User = Depends(get_current_user)):
+    if current_user.role != "student":
+        raise HTTPException(status_code=403, detail="Only students can join tournaments")
+    t = await db.tournaments.find_one({"id": tournament_id})
+    if not t:
+        raise HTTPException(status_code=404, detail="Tournament not found")
+    if _tournament_status(t) != "active":
+        raise HTTPException(status_code=400, detail="Tournament is not active")
+    if t["age_group"] != "all" and t["age_group"] != current_user.age_group:
+        raise HTTPException(status_code=403, detail=f"This tournament is for age group {t['age_group']}")
+    if t["scope"] == "class" and current_user.teacher_id != t["teacher_id"]:
+        raise HTTPException(status_code=403, detail="This tournament is only for the teacher's own students")
+    if await db.tournament_entries.find_one({"tournament_id": tournament_id, "student_id": current_user.id}):
+        raise HTTPException(status_code=400, detail="Already joined")
+    await db.tournament_entries.insert_one({
+        "id": str(uuid.uuid4()), "tournament_id": tournament_id,
+        "student_id": current_user.id, "student_name": current_user.full_name,
+        "age_group": current_user.age_group, "score": None,
+        "joined_at": datetime.now(timezone.utc).isoformat(), "completed_at": None,
+    })
+    return {"message": "Joined tournament"}
+
+
+@api_router.post("/tournaments/{tournament_id}/submit")
+async def submit_tournament(tournament_id: str, attempt_data: dict, current_user: User = Depends(get_current_user)):
+    t = await db.tournaments.find_one({"id": tournament_id})
+    if not t:
+        raise HTTPException(status_code=404, detail="Tournament not found")
+    if _tournament_status(t) != "active":
+        raise HTTPException(status_code=400, detail="Tournament is not active")
+    entry = await db.tournament_entries.find_one({"tournament_id": tournament_id, "student_id": current_user.id})
+    if not entry:
+        raise HTTPException(status_code=400, detail="Join the tournament first")
+    if entry["score"] is not None:
+        raise HTTPException(status_code=400, detail="You already submitted your attempt")
+    quiz = await db.quizzes.find_one({"id": t["quiz_id"]})
+    if not quiz:
+        raise HTTPException(status_code=404, detail="Tournament quiz not found")
+    score = _grade(quiz, attempt_data.get("answers", []))
+    await db.tournament_entries.update_one(
+        {"id": entry["id"]},
+        {"$set": {"score": score, "completed_at": datetime.now(timezone.utc).isoformat()}},
+    )
+    await award_points(current_user.id, TOURNAMENT_POINTS)
+    streak = await touch_streak(current_user.id)
+    better = await db.tournament_entries.count_documents(
+        {"tournament_id": tournament_id, "score": {"$gt": score}})
+    return {"score": score, "rank": better + 1, "points_earned": TOURNAMENT_POINTS, "streak_days": streak}
+
+
+@api_router.get("/certificates/me")
+async def get_my_certificates(current_user: User = Depends(get_current_user)):
+    return await db.certificates.find({"student_id": current_user.id}, {"_id": 0}).sort("awarded_at", -1).to_list(100)
+
+
+# ---------------- Leaderboards ----------------
+@api_router.get("/leaderboard/students")
+async def student_leaderboard(age_group: str = "all", subject: Optional[str] = None,
+                              current_user: User = Depends(get_current_user)):
+    query = {"role": "student"}
+    if age_group != "all":
+        query["age_group"] = age_group
+    students = await db.users.find(query).to_list(1000)
+    if not students:
+        return []
+    ids = [s["id"] for s in students]
+    a_query = {"user_id": {"$in": ids}}
+    if subject:
+        a_query["subject"] = subject
+    attempts = await db.quiz_attempts.find(a_query, {"_id": 0}).to_list(10000)
+    by_user = {}
+    for a in attempts:
+        u = by_user.setdefault(a["user_id"], {})
+        u[a["quiz_id"]] = max(u.get(a["quiz_id"], 0), a["score"])
+    rows = []
+    for s in students:
+        best = by_user.get(s["id"], {})
+        avg = round(sum(best.values()) / len(best)) if best else 0
+        rows.append({"user_id": s["id"], "username": s["username"], "full_name": s["full_name"],
+                     "age_group": s.get("age_group"), "points": s.get("points", 0),
+                     "streak_days": s.get("streak_days", 0), "avg_score": avg,
+                     "quizzes_completed": len(best)})
+    if subject:
+        rows.sort(key=lambda r: (r["avg_score"], r["quizzes_completed"]), reverse=True)
+    else:
+        rows.sort(key=lambda r: r["points"], reverse=True)
+    rows = rows[:20]
+    for i, r in enumerate(rows):
+        r["rank"] = i + 1
+    return rows
+
+
+@api_router.get("/leaderboard/teachers")
+async def teacher_leaderboard(current_user: User = Depends(get_current_user)):
+    teachers = await db.users.find({"role": "teacher"}).to_list(500)
+    tournaments = await db.tournaments.find({}, {"_id": 0}).to_list(500)
+    entries = await db.tournament_entries.find({}, {"_id": 0}).to_list(5000)
+    attempts = await db.quiz_attempts.find({}, {"_id": 0, "user_id": 1, "quiz_id": 1, "score": 1}).to_list(20000)
+    best_by_user = {}
+    for a in attempts:
+        u = best_by_user.setdefault(a["user_id"], {})
+        u[a["quiz_id"]] = max(u.get(a["quiz_id"], 0), a["score"])
+
+    all_students = await db.users.find({"role": "student"}).to_list(2000)
+    students_by_teacher = {}
+    for s in all_students:
+        if s.get("teacher_id"):
+            students_by_teacher.setdefault(s["teacher_id"], []).append(s)
+
+    rows = []
+    for t in teachers:
+        my_tournaments = [x for x in tournaments if x["teacher_id"] == t["id"]]
+        pro_count = sum(1 for x in my_tournaments if x.get("is_professional"))
+        my_t_ids = {x["id"] for x in my_tournaments}
+        tournament_students = len({e["student_id"] for e in entries if e["tournament_id"] in my_t_ids})
+        my_students = students_by_teacher.get(t["id"], [])
+        if my_students:
+            metrics = []
+            for s in my_students:
+                best = best_by_user.get(s["id"], {})
+                avg = sum(best.values()) / len(best) if best else 0
+                metrics.append(avg + s.get("streak_days", 0) * 10)
+            student_metric = sum(metrics) / len(metrics)
+        else:
+            student_metric = 0
+        # Best-teacher score: 75% professional tournaments, 25% student streaks + quiz scores
+        score = round(0.75 * (pro_count * 100) + 0.25 * student_metric, 1)
+        rows.append({"user_id": t["id"], "username": t["username"], "full_name": t["full_name"],
+                     "verified": t.get("verified", False), "score": score,
+                     "pro_tournaments": pro_count, "students_count": len(my_students),
+                     "tournament_students": tournament_students})
+
+    best = [dict(r) for r in sorted(rows, key=lambda r: r["score"], reverse=True)[:10]]
+    popular = [dict(r) for r in sorted(rows, key=lambda r: (r["tournament_students"], r["students_count"]), reverse=True)[:10]]
+    for i, r in enumerate(best):
+        r["rank"] = i + 1
+    for i, r in enumerate(popular):
+        r["rank"] = i + 1
+    return {"best": best, "popular": popular}
+
+
+# ---------------- Seed ----------------
+@api_router.post("/seed-data")
+async def seed_sample_data(current_user: User = Depends(require_teacher)):
+    now = datetime.now(timezone.utc)
+
+    # Migrate legacy users missing new fields
+    await db.users.update_many(
+        {"role": {"$exists": False}},
+        {"$set": {"role": "student", "points": 0, "streak_days": 0, "verified": False}},
+    )
+
+    await db.quizzes.delete_many({"created_by": "system"})
+    await db.activities.delete_many({})
+    await db.content.delete_many({})
+
+    quizzes = [{**q, "id": str(uuid.uuid4()), "created_by": "system", "created_at": now} for q in QUIZZES]
+    activities = [{**a, "id": str(uuid.uuid4()), "created_at": now} for a in ACTIVITIES]
+    content = [{**c, "id": str(uuid.uuid4()), "created_at": now.isoformat()} for c in CONTENT_ITEMS]
+    await db.quizzes.insert_many(quizzes)
+    await db.activities.insert_many(activities)
+    await db.content.insert_many(content)
+
+    # Demo accounts
+    async def ensure_user(username, email, full_name, password, role, age=None, verified=False, teacher_id=None, teacher_name=None, points=0, streak=0):
+        existing = await db.users.find_one({"username": username})
+        if existing:
+            updates = {"points": points, "streak_days": streak, "verified": verified}
+            if age is not None:
+                updates.update({"age": age, "age_group": age_to_group(age)})
+            if teacher_id:
+                updates.update({"teacher_id": teacher_id, "teacher_name": teacher_name})
+            await db.users.update_one({"id": existing["id"]}, {"$set": updates})
+            return existing["id"]
+        u = User(email=email, username=username, full_name=full_name, role=role,
+                 age=age, age_group=age_to_group(age) if age else None,
+                 verified=verified, teacher_id=teacher_id, teacher_name=teacher_name,
+                 points=points, streak_days=streak)
+        d = u.dict()
+        d["password"] = hash_password(password)
+        await db.users.insert_one(d)
+        return u.id
+
+    teacher_id = await ensure_user("teacher_demo", "teacher@steam.edu", "Dr. Sarah Mitchell",
+                                   "TeacherDemo123!", "teacher", verified=True)
+    alex_id = await ensure_user("alex_chen", "alex@steam.edu", "Alex Chen", "StudentDemo123!",
+                                "student", age=14, teacher_id=teacher_id, teacher_name="Dr. Sarah Mitchell",
+                                points=310, streak=4)
+    maya_id = await ensure_user("maya_r", "maya@steam.edu", "Maya Robinson", "StudentDemo123!",
+                                "student", age=17, teacher_id=teacher_id, teacher_name="Dr. Sarah Mitchell",
+                                points=485, streak=9)
+    sam_id = await ensure_user("sam_patel", "sam@steam.edu", "Sam Patel", "StudentDemo123!",
+                               "student", age=19, teacher_id=teacher_id, teacher_name="Dr. Sarah Mitchell",
+                               points=220, streak=2)
+    ts = await db.users.find_one({"username": "teststudent"})
+    if ts:
+        await db.users.update_one({"id": ts["id"]}, {"$set": {
+            "age": 16, "age_group": "16-18", "teacher_id": teacher_id, "teacher_name": "Dr. Sarah Mitchell"}})
+
+    # Demo quiz attempts (fresh each seed so quiz ids stay valid)
+    demo_ids = [alex_id, maya_id, sam_id]
+    await db.quiz_attempts.delete_many({"user_id": {"$in": demo_ids}})
+    quiz_by_title = {q["title"]: q for q in quizzes}
+    demo_attempts = [
+        (alex_id, "Space & Our Solar System", 80), (alex_id, "Algebra Foundations", 60),
+        (maya_id, "Cells & Chemistry Basics", 100), (maya_id, "Geometry & Trigonometry", 80),
+        (maya_id, "Forces & Structures", 80),
+        (sam_id, "Calculus & Probability", 60), (sam_id, "Physics: Motion & Energy", 80),
+    ]
+    for uid, title, score in demo_attempts:
+        q = quiz_by_title[title]
+        await db.quiz_attempts.insert_one({
+            "id": str(uuid.uuid4()), "quiz_id": q["id"], "user_id": uid,
+            "quiz_title": title, "subject": q["subject"], "answers": [], "score": score,
+            "completed_at": now.isoformat(),
+        })
+
+    # Demo challenges (today) + tournaments from teacher_demo
+    old_tournaments = await db.tournaments.find({"teacher_id": teacher_id}).to_list(100)
+    old_t_ids = [t["id"] for t in old_tournaments]
+    await db.tournament_entries.delete_many({"tournament_id": {"$in": old_t_ids}})
+    await db.tournaments.delete_many({"teacher_id": teacher_id})
+    await db.challenges.delete_many({"teacher_id": teacher_id})
+    await db.challenge_completions.delete_many({})
+
+    math_quiz = quiz_by_title["Geometry & Trigonometry"]
+    science_quiz = quiz_by_title["Cells & Chemistry Basics"]
+    await db.challenges.insert_many([
+        {"id": str(uuid.uuid4()), "teacher_id": teacher_id, "teacher_name": "Dr. Sarah Mitchell",
+         "title": "Read one Science article", "description": "Pick any article in the Science section of the Content hub and summarize it in 3 sentences in your notebook.",
+         "type": "task", "quiz_id": None, "points": 20, "date": date.today().isoformat(),
+         "created_at": now.isoformat()},
+        {"id": str(uuid.uuid4()), "teacher_id": teacher_id, "teacher_name": "Dr. Sarah Mitchell",
+         "title": "Ace the Geometry quiz", "description": "Score as high as you can on the Geometry & Trigonometry quiz.",
+         "type": "quiz", "quiz_id": math_quiz["id"], "points": 30, "date": date.today().isoformat(),
+         "created_at": now.isoformat()},
+        {"id": str(uuid.uuid4()), "teacher_id": teacher_id, "teacher_name": "Dr. Sarah Mitchell",
+         "title": "Share one project idea", "description": "Post one creative STEAM project idea in the Ideas hub.",
+         "type": "task", "quiz_id": None, "points": 15, "date": date.today().isoformat(),
+         "created_at": now.isoformat()},
+    ])
+
+    t1_id = str(uuid.uuid4())
+    t2_id = str(uuid.uuid4())
+    await db.tournaments.insert_many([
+        {"id": t1_id, "title": "Autumn Math Sprint", "description": "One shot at the Geometry & Trigonometry quiz — the highest score wins a certificate.",
+         "subject": "Mathematics", "age_group": "16-18", "scope": "open", "quiz_id": math_quiz["id"],
+         "teacher_id": teacher_id, "teacher_name": "Dr. Sarah Mitchell", "is_professional": True,
+         "start_at": (now - timedelta(hours=1)).isoformat(), "end_at": (now + timedelta(days=7)).isoformat(),
+         "finalized": False, "created_at": now.isoformat()},
+        {"id": t2_id, "title": "Science Explorers Cup", "description": "Open to all ages — test your cell biology and chemistry knowledge.",
+         "subject": "Science", "age_group": "all", "scope": "open", "quiz_id": science_quiz["id"],
+         "teacher_id": teacher_id, "teacher_name": "Dr. Sarah Mitchell", "is_professional": True,
+         "start_at": (now - timedelta(hours=1)).isoformat(), "end_at": (now + timedelta(days=10)).isoformat(),
+         "finalized": False, "created_at": now.isoformat()},
+    ])
+    await db.tournament_entries.insert_one({
+        "id": str(uuid.uuid4()), "tournament_id": t1_id, "student_id": maya_id,
+        "student_name": "Maya Robinson", "age_group": "16-18", "score": 80,
+        "joined_at": now.isoformat(), "completed_at": now.isoformat(),
+    })
+
+    # Demo ideas
+    if await db.ideas.count_documents({}) == 0:
+        authors = [(alex_id, "Alex Chen"), (maya_id, "Maya Robinson"), (sam_id, "Sam Patel"), (maya_id, "Maya Robinson")]
+        for (aid, aname), idea in zip(authors, DEMO_IDEAS):
+            await db.ideas.insert_one({
+                "id": str(uuid.uuid4()), **idea, "author_id": aid, "author_name": aname,
+                "created_at": now, "likes": 0, "liked_by": [],
+            })
+
+    return {"message": "Seed complete", "quizzes": len(quizzes), "activities": len(activities),
+            "content_items": len(content)}
+
+
 app.include_router(api_router)
 
 app.add_middleware(
@@ -417,12 +1114,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

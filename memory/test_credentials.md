@@ -1,12 +1,27 @@
 # Test Credentials
 
-## STEAM Platform - Test User
+## Teacher signup code (backend/.env TEACHER_SIGNUP_CODE)
+`STEAM-TEACH-2026`
+
+## Teacher (verified, demo)
+- **Username**: `teacher_demo`
+- **Password**: `TeacherDemo123!`
+- **Email**: `teacher@steam.edu`
+- **Full name**: `Dr. Sarah Mitchell`
+- verified: true (can host open/professional tournaments)
+
+## Students (demo, password `StudentDemo123!` for all)
+- `alex_chen` — Alex Chen, age 14 (group 13-15), mentored by teacher_demo
+- `maya_r` — Maya Robinson, age 17 (group 16-18), mentored by teacher_demo
+- `sam_patel` — Sam Patel, age 19 (group 18+), mentored by teacher_demo
+
+## Main test student
 - **Username**: `teststudent`
 - **Password**: `TestPass123!`
 - **Email**: `teststudent@steam.edu`
-- **Full name**: `Test Student`
+- Age 16 (group 16-18), mentored by teacher_demo
 
-Use these credentials to log in via `/auth` (Login tab, enter username + password).
-
-Registration endpoint: `POST /api/auth/register`
-Login endpoint: `POST /api/auth/login` (sends `username` + `password`)
+## Endpoints
+- Register: `POST /api/auth/register` (role: student|teacher; students need `age`, teachers need `teacher_code`)
+- Login: `POST /api/auth/login` (username + password) → Bearer token
+- Seed: `POST /api/seed-data` (requires a TEACHER Bearer token, e.g. teacher_demo; idempotent)

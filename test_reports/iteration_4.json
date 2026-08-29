@@ -1,0 +1,48 @@
+{
+  "summary": "Full V2 regression: 58 pytest backend cases across auth/roles, quiz attempts (points+streak+challenge auto-complete), activities, content, stats, challenges, tournaments (age/scope/one-shot), ideas (fair likes, comments, sorting), leaderboards (students+teachers), chat/mentorship, certificates — 58/58 passing. Playwright E2E covered student dashboard + Mark Done, quiz end-to-end, activity drag-and-drop with @hello-pangea/dnd, Content Hub (areas/tabs/age filter/detail dialog/show solution), Ideas (sort/filter/like toggle/detail comments), Tournaments (join -> one-page quiz -> submit -> live ranking), Leaderboards (students+teachers), teacher dashboard (challenge + open-scope tournament creation), Chat (search, add-as-student, send message), registration (student age -> group, teacher code validation), navbar and protected-route redirects, mobile navbar. No functional blockers found.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/quizzes/{id}/attempt", "issue": "Quiz-challenge auto-complete uses db.challenges.find_one({teacher_id,type,quiz_id,date}) — if a teacher creates two quiz challenges for the SAME quiz on the same day, an arbitrary one is completed (reproduced: completion recorded against a duplicate challenge, so the intended challenge stayed 'not completed'). Consider find() over all matching challenges, or reject duplicate quiz challenges per quiz/day."},
+      {"endpoint": "POST /api/auth/register", "issue": "EmailStr rejects reserved TLDs (e.g. *.test) with 422 while all other validation errors return 400/403 — inconsistent error shape for clients (frontend shows raw detail array risk). Cosmetic only."},
+      {"endpoint": "GET /api/leaderboard/teachers", "issue": "Every registered teacher with score 0 is listed in Best/Most Popular (no minimum activity threshold), so brand-new teachers pad the boards. Product decision, not a bug."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "StudentDashboard header", "issue": "React DOM-nesting console error on every dashboard load: <Badge> (renders a <div>) is nested inside <p className=\"text-xl text-gray-600\"> (line ~59). Wrap in a <div>/<span> instead of <p>.", "selector": "[data-testid=\"dashboard-header\"]", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Navbar / greeting", "issues": ["Greeting uses only the first token of full_name — teacher_demo shows 'Welcome, Dr.!' and dashboard shows 'Welcome back, Dr.!'; students named 'QA Student x' show 'QA'. Use first name or full name."]},
+      {"screen": "Quiz / Activity result screens", "issues": ["Result card sits at top with a very large empty area below on 1080p; consider vertically centering the card or adding next-step CTAs."]},
+      {"screen": "Tournament detail", "issues": ["Tournament detail view does not change the URL (stays /tournaments) — no deep link/back-button support for a specific tournament."]},
+      {"screen": "Activities matching", "issues": ["A dropped item stays in the left 'Items to Match' list (only greyed) which can confuse students about what is still unmatched."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/cleanup_test_data.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Fix DOM nesting (Badge inside <p>) in StudentDashboard header to clear the React console error",
+    "Make quiz-challenge auto-completion deterministic when a teacher has multiple quiz challenges for the same quiz on the same day",
+    "Optional polish: greeting name derivation, tournament detail routing, dropped-item styling in matching activity"
+  ],
+  "critical_code_review_comments": [
+    "server.py is 1123 lines and mixes auth, quizzes, tournaments, chat, leaderboards and a 130-line seed routine — split into routers (auth/learning/social/tournaments/seed) and move seeding to a script/module.",
+    "POST /api/seed-data only requires any authenticated user; any registered student can wipe and recreate all system quizzes/activities/content and reset demo data. Gate it behind teacher/admin role or an env-provided seed token.",
+    "leaderboard/teachers loads all tournaments, entries and every quiz_attempt (to_list(20000)) into memory on each call — will not scale; move the aggregation into MongoDB.",
+    "Ideas/quiz-attempt lists use fixed to_list(100..10000) with no pagination on any list endpoint.",
+    "touch_streak reads then writes without atomicity and awards streaks per-request; concurrent submissions can double-count (minor).",
+    "In leaderboard/teachers the 'best' loop assigns r_copy = r then mutates it (dead alias) — the same dict objects are shared with 'popular' before it is copied; simplify to avoid accidental cross-mutation."
+  ],
+  "success_rate": {"backend": "100% (58/58 pytest cases)", "frontend": "100% of tested flows (all 9 UI scenarios passed)"},
+  "seed_data_creation": "Created and then deleted ~35 throwaway users (usernames prefixed TEST_/TESTui_), their attempts/entries/messages/completions, TEST_ ideas/comments/challenges/tournaments via /app/backend/tests/cleanup_test_data.py. DB back to seeded state (7 users, 4 ideas, 2 tournaments, 3 challenges). NOTE: teststudent now has real residue from UI testing — ~100 points, 1-day streak, 1 quiz attempt (Cells & Chemistry Basics 0%), 1 activity completion (Lab Equipment Matching), 2 completed task challenges and a submitted entry (20%) in 'Autumn Math Sprint'.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "/app/memory/test_credentials.md is accurate — teststudent/TestPass123!, teacher_demo/TeacherDemo123!, demo students StudentDemo123!, teacher code STEAM-TEACH-2026 all verified working",
+  "context_for_next_testing_agent": "Backend suite: /app/backend/tests/backend_test.py (58 tests, ~35s, run with `python -m pytest tests/backend_test.py -p no:randomly`). It self-purges leftover TEST_ challenges/tournaments at session start (needed because challenge lookups are date+quiz scoped) and registers throwaway users — always run /app/backend/tests/cleanup_test_data.py afterwards. Registration requires a real-TLD email (pydantic rejects *.test). teststudent has already submitted to 'Autumn Math Sprint' and completed the 2 seeded task challenges, so re-tests of join/submit or Mark Done need a freshly registered 16-18 student. Playwright notes: on /tournaments you must click compete/view card first, then [data-testid=take-tournament-quiz-btn] on the detail card; tournament options use [data-testid=tournament-q{i}-option-{j}]. @hello-pangea/dnd needs mousedown -> small 12px move -> stepped move -> pause -> mouseup to register a drop. Always wait for data-loaded selectors (challenge-complete-btn-*, student-row-*) instead of asserting right after the header appears.",
+  "rca_of_the_issue": "Only real defect found: the single failing pytest case (quiz challenge not marked completed) was root-caused to submit_quiz_attempt using find_one on {teacher_id,type,quiz_id,date}; leftover challenges from an earlier run shared the same teacher/quiz/day, so the completion was written against a different challenge id. After purging duplicates the flow passes, but the ambiguity is a latent product bug. Playbook items about httpOnly cookies / brute-force lockout / seed_admin do not apply — this app intentionally uses stateless JWT Bearer tokens with bcrypt ($2b$ hashes verified directly in MongoDB) and has no admin seeding."
+}
