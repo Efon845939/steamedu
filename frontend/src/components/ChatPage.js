@@ -67,7 +67,7 @@ const ChatPage = () => {
       }
     }, 300);
     return () => clearTimeout(t);
-  }, [searchQuery]);
+  }, [searchQuery, API]);
 
   const sendMessage = async (e) => {
     e.preventDefault();

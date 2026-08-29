@@ -37,11 +37,11 @@ const LeaderboardPage = () => {
       }
     };
     fetchStudents();
-  }, [ageGroup, subject]);
+  }, [ageGroup, subject, API]);
 
   useEffect(() => {
     axios.get(`${API}/leaderboard/teachers`).then((res) => setTeachers(res.data)).catch(console.error);
-  }, []);
+  }, [API]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 pt-8">
@@ -99,7 +99,7 @@ const LeaderboardPage = () => {
                             <h4 className="font-semibold text-sm">
                               {s.full_name} {s.user_id === user.id && <span className="text-emerald-600">(you)</span>}
                             </h4>
-                            <p className="text-xs text-gray-500">@{s.username} • Ages {s.age_group}</p>
+                            <p className="text-xs text-gray-500">@{s.username}{s.age_group ? ` • Ages ${s.age_group}` : ''}</p>
                           </div>
                         </div>
                         <div className="flex items-center gap-3 text-sm">

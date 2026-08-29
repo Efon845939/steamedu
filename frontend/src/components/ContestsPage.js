@@ -114,14 +114,14 @@ const ContestsPage = () => {
           </Card>
 
           {quiz.questions.map((q, qi) => (
-            <Card key={qi} className="bg-white/90 backdrop-blur-sm mb-4" data-testid={`contest-question-${qi}`}>
+            <Card key={q.question} className="bg-white/90 backdrop-blur-sm mb-4" data-testid={`contest-question-${qi}`}>
               <CardHeader>
                 <CardTitle className="text-base">{qi + 1}. {q.question}</CardTitle>
               </CardHeader>
               <CardContent className="grid sm:grid-cols-2 gap-2">
                 {q.options.map((opt, oi) => (
                   <button
-                    key={oi}
+                    key={opt}
                     onClick={() => setAnswers({ ...answers, [qi]: opt })}
                     className={`p-3 text-left text-sm rounded-lg border-2 transition-all ${
                       answers[qi] === opt

@@ -1,4 +1,4 @@
-import React, { useContext, useState, useEffect } from 'react';
+import React, { useContext, useState, useEffect, useCallback } from 'react';
 import { AuthContext } from '../App';
 import { Link, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
@@ -23,7 +23,7 @@ const StudentDashboard = ({ stats, refreshStats }) => {
   const [selectedCert, setSelectedCert] = useState(null);
   const [badgeKey, setBadgeKey] = useState(0);
 
-  const fetchExtras = async () => {
+  const fetchExtras = useCallback(async () => {
     try {
       const [chRes, certRes] = await Promise.all([
         axios.get(`${API}/challenges/today`),
@@ -34,11 +34,11 @@ const StudentDashboard = ({ stats, refreshStats }) => {
     } catch (e) {
       console.error(e);
     }
-  };
+  }, [API]);
 
   useEffect(() => {
     fetchExtras();
-  }, []);
+  }, [fetchExtras]);
 
   const completeTask = async (challenge) => {
     try {
@@ -228,8 +228,8 @@ const StudentDashboard = ({ stats, refreshStats }) => {
                 <p className="text-gray-500 text-sm py-4 text-center">No quizzes taken yet — start one now!</p>
               ) : (
                 <div className="space-y-3">
-                  {stats.recent_attempts.map((a, i) => (
-                    <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  {stats.recent_attempts.map((a) => (
+                    <div key={`${a.quiz_title}-${a.completed_at}`} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                       <div>
                         <h4 className="font-semibold text-sm">{a.quiz_title}</h4>
                         <p className="text-xs text-gray-500">{new Date(a.completed_at).toLocaleDateString()}</p>

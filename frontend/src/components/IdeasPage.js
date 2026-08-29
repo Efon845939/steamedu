@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../App';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
@@ -31,7 +31,7 @@ const IdeasPage = () => {
 
   const categories = ['Science', 'Technology', 'Engineering', 'Arts', 'Mathematics'];
 
-  const fetchIdeas = async () => {
+  const fetchIdeas = useCallback(async () => {
     try {
       const params = { sort };
       if (category !== 'all') params.category = category;
@@ -42,24 +42,24 @@ const IdeasPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [API, sort, category]);
 
-  const fetchSpotlights = async () => {
+  const fetchSpotlights = useCallback(async () => {
     try {
       const res = await axios.get(`${API}/ideas/spotlights`);
       setSpotlights(res.data);
     } catch (e) {
       console.error(e);
     }
-  };
+  }, [API]);
 
   useEffect(() => {
     fetchIdeas();
-  }, [sort, category]);
+  }, [fetchIdeas]);
 
   useEffect(() => {
     fetchSpotlights();
-  }, []);
+  }, [fetchSpotlights]);
 
   const toggleSpotlight = async (ideaId) => {
     try {

@@ -741,6 +741,7 @@ async def get_verification(current_user: User = Depends(require_teacher)):
 # ---------------- Stats ----------------
 async def _full_student_stats(user: dict) -> dict:
     uid = user["id"]
+    await evaluate_badges(uid)
     ag = user.get("age_group")
     base = await _student_stats(uid)
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { AuthContext } from '../App';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
@@ -26,18 +26,7 @@ const QuizPage = () => {
   const [quizResult, setQuizResult] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchQuizzes();
-  }, []);
-
-  useEffect(() => {
-    if (id && quizzes.length > 0) {
-      const quiz = quizzes.find((q) => q.id === id);
-      if (quiz) startQuiz(quiz);
-    }
-  }, [id, quizzes]);
-
-  const fetchQuizzes = async () => {
+  const fetchQuizzes = useCallback(async () => {
     try {
       const params = {};
       if (user?.age_group) params.age_group = user.age_group;
@@ -48,15 +37,26 @@ const QuizPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [API, user?.age_group]);
 
-  const startQuiz = (quiz) => {
+  const startQuiz = useCallback((quiz) => {
     setSelectedQuiz(quiz);
     setCurrentQuestion(0);
     setAnswers([]);
     setShowResults(false);
     setQuizResult(null);
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchQuizzes();
+  }, [fetchQuizzes]);
+
+  useEffect(() => {
+    if (id && quizzes.length > 0) {
+      const quiz = quizzes.find((q) => q.id === id);
+      if (quiz) startQuiz(quiz);
+    }
+  }, [id, quizzes, startQuiz]);
 
   const handleAnswerSelect = (selectedOption) => {
     const newAnswers = [...answers];
@@ -196,7 +196,7 @@ const QuizPage = () => {
               <div className="space-y-3">
                 {question.options.map((option, index) => (
                   <button
-                    key={index}
+                    key={option}
                     onClick={() => handleAnswerSelect(option)}
                     className={`w-full p-4 text-left rounded-lg border-2 transition-all duration-200 ${
                       currentAnswer === option

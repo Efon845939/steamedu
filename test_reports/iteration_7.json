@@ -1,0 +1,32 @@
+{
+  "summary": "Frontend-only regression run after the useCallback/stable-key refactor. Verified QuizPage (list, open, full answer+submit, deep-link /quiz/{id}), IdeasPage (list, Teacher's Picks, sort/category refetch, share idea + badge toasts, like), LeaderboardPage (student rows + age/subject filters, teacher tabs), ChatPage (conversations, debounced user search, send message, 5s polling keeps thread), ContestsPage (list, detail, join, full contest quiz render 5 questions x 4 options, submit + ranking), ContentHub (areas, content list, tab filters, detail dialog body + Show Solution), Student dashboard (stats, weekly recap, badges grid 12 tiles, announcements + mark-read, today's challenges + Mark Done with points update, certificates), Teacher dashboard (stats, verified badge, create daily challenge, create contest, announcements create + read counter + cancel/confirm delete, my students/challenges/contests). Explicitly instrumented every page with a network-request counter: no infinite refetch loops anywhere - every fetcher fires exactly twice on mount (React StrictMode double-invoke in dev) and exactly once per filter change; idle periods produce zero extra requests except the intended 5s chat poll. No console errors observed on any page.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Student dashboard first load - badge count in 'Ideas & Awards' card", "issue": "Badges are granted lazily by GET /api/badges, while GET /api/stats/me runs in parallel, so on the very first load after a new badge is earned the stat card can show '0/12 badges' while the My Badges card shows '3/12'. Self-corrects on next load/refresh. Cosmetic data-freshness inconsistency, not caused by the refactor.", "affected_selectors": ["[data-testid=\"ideas-shared-stat\"]", "[data-testid=\"badges-earned-count\"]"]}
+    ],
+    "design_issues": [
+      {"screen": "Leaderboard (students)", "issues": ["Rows for users without an age_group render a dangling label '@Efon • Ages' (empty age group). Should hide the 'Ages' text when age_group is missing."]}
+    ]
+  },
+  "test_report_links": ["/app/tests/cleanup_test_data.py"],
+  "action_items": [
+    "Optional: hide the 'Ages' suffix on leaderboard rows when a user has no age_group.",
+    "Optional: have /api/stats/me evaluate badge grants (or refresh stats after BadgesCard load) so the badge count in the stat card is never one load behind.",
+    "Optional code-quality (eslint, non-blocking): react/no-unstable-nested-components in ChatPage.js:95, ContentHub.js:58, Navbar.js:25 (nested component definitions re-created each render - the same class of issue this refactor targeted), plus ~20 react/no-unescaped-entities warnings."
+  ],
+  "critical_code_review_comments": [
+    "QuizPage deep-link effect ([id, quizzes, startQuiz]) is safe: startQuiz is a stable useCallback([]) and quizzes only changes on fetch, so the quiz auto-starts exactly once - verified with request counters (1 /api/quizzes call per mount pair, question counter stayed at 'Question 1 of 5' during a 6s idle).",
+    "IdeasPage fetchIdeas useCallback([API, sort, category]) triggers exactly one /api/ideas refetch per filter change; fetchSpotlights depends only on API so it does not refetch on filter change - correct.",
+    "ChatPage 5s poll re-fetches the open thread without remounting or clearing messages; sent message stayed rendered after 9s of polling."
+  ],
+  "updated_files": ["/app/tests/cleanup_test_data.py"],
+  "success_rate": {"backend": "not tested (frontend-only request)", "frontend": "100% of tested flows passed"},
+  "seed_data_creation": "Created and then deleted TEST_Regression Idea/Challenge/Contest 8291 and a TEST_Regression Announcement (announcement deleted through the UI delete-confirm flow; the rest removed via /app/tests/cleanup_test_data.py). Side effects left in place: sam_patel now has an attempt on contest 52ce560e (score 0%), teststudent has an extra attempt on 'Cells & Chemistry Basics', alex_chen completed the 'Read one Science article' challenge (+20 pts) and marked the 'Lab report due Friday' announcement read, and alex_chen liked one idea.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "teacher_demo/TeacherDemo123!, teststudent/TestPass123!, alex_chen|maya_r|sam_patel /StudentDemo123! (from /app/memory/test_credentials.md)",
+  "context_for_next_testing_agent": "No functional regressions from the hook/key refactor. Pattern that produced false negatives in my first pass: waiting only for the card wrapper testid (e.g. student-announcements-card, daily-challenges-card) returns 0 children because those cards render before their fetch resolves - add an explicit wait/timeout (~3-4s) or wait for a child selector. Note teststudent has already attempted contest 779c1d56, so use sam_patel/maya_r when a fresh contest attempt is needed. Contest option testids are contest-q{qi}-option-{oi}; chat search input is chat-search-input and results are chat-partner-{username}; students can only search teachers ('sarah').",
+  "rca_of_the_issue": "No loop/stale-data regression found. Request counters showed the expected 2x-on-mount (StrictMode) and 1x-per-filter-change behaviour for /api/quizzes, /api/ideas, /api/ideas/spotlights, /api/leaderboard/*, /api/content, /api/tournaments, /api/announcements, /api/challenges/*, /api/badges. The single data inconsistency (badge count in stat card) is a backend read-ordering artefact (badge grants happen inside GET /api/badges), pre-existing and cosmetic."
+}

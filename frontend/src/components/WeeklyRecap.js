@@ -18,7 +18,7 @@ export const WeeklyRecap = () => {
 
   useEffect(() => {
     axios.get(`${API}/stats/weekly`).then((r) => setRecap(r.data)).catch(console.error);
-  }, []);
+  }, [API]);
 
   if (!recap) return null;
 

@@ -1,4 +1,4 @@
-import React, { useContext, useState, useEffect } from 'react';
+import React, { useContext, useState, useEffect, useCallback } from 'react';
 import { AuthContext } from '../App';
 import { Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
@@ -27,7 +27,7 @@ const TeacherDashboard = ({ stats, refreshStats }) => {
   const [newChallenge, setNewChallenge] = useState({ title: '', description: '', type: 'task', quiz_id: '', points: 20 });
   const [newTournament, setNewTournament] = useState({ title: '', description: '', subject: 'Science', age_group: 'all', scope: 'class', quiz_id: '', duration_days: 7 });
 
-  const fetchAll = async () => {
+  const fetchAll = useCallback(async () => {
     try {
       const [stRes, chRes, tRes, qRes] = await Promise.all([
         axios.get(`${API}/teacher/students`),
@@ -42,11 +42,11 @@ const TeacherDashboard = ({ stats, refreshStats }) => {
     } catch (e) {
       console.error(e);
     }
-  };
+  }, [API, user.id]);
 
   useEffect(() => {
     fetchAll();
-  }, []);
+  }, [fetchAll]);
 
   const createChallenge = async (e) => {
     e.preventDefault();

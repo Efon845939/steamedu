@@ -264,13 +264,13 @@ const ContentHub = () => {
                   <div className="bg-emerald-50 rounded-lg p-4">
                     <h4 className="font-semibold text-sm text-emerald-900 mb-2">Materials needed</h4>
                     <div className="flex flex-wrap gap-2">
-                      {detail.materials.map((m, i) => <Badge key={i} variant="outline" className="bg-white">{m}</Badge>)}
+                      {detail.materials.map((m) => <Badge key={m} variant="outline" className="bg-white">{m}</Badge>)}
                     </div>
                   </div>
                 )}
 
                 <div className="space-y-4 text-gray-700 text-sm leading-relaxed" data-testid="content-detail-body">
-                  {detail.body.split('\n\n').map((p, i) => <p key={i} className="whitespace-pre-wrap">{p}</p>)}
+                  {detail.body.split('\n\n').map((p) => <p key={p.slice(0, 48)} className="whitespace-pre-wrap">{p}</p>)}
                 </div>
 
                 {detail.solution && (
@@ -282,7 +282,7 @@ const ContentHub = () => {
                     ) : (
                       <div className="bg-purple-50 rounded-lg p-4 space-y-3">
                         <h4 className="font-semibold text-sm text-purple-900">Solution</h4>
-                        {detail.solution.split('\n\n').map((p, i) => <p key={i} className="text-sm text-purple-900 whitespace-pre-wrap">{p}</p>)}
+                        {detail.solution.split('\n\n').map((p) => <p key={p.slice(0, 48)} className="text-sm text-purple-900 whitespace-pre-wrap">{p}</p>)}
                       </div>
                     )}
                   </div>

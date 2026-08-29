@@ -57,6 +57,8 @@ Quiz first attempt = score pts • Activity first completion = 50 pts • Challe
 - **P3**: Split server.py into routers (auth/learning/social/contests)
 
 ## Notes
+- Code review follow-up (2026-06, session 3): React hook dependencies fixed via `useCallback` fetchers across QuizPage/IdeasPage/LeaderboardPage/ChatPage/dashboards/announcements; array-index React keys replaced with stable content keys (quiz & contest options, recent attempts, materials, prose blocks); leaderboard hides "Ages" when age_group is absent; `/api/stats/me` now evaluates badges so the stat card is never one load behind. Verified by frontend regression run (iteration_7, 100% of tested flows, no infinite refetch loops) + 34 backend tests re-run.
+- Deliberately NOT applied from the code review: moving JWT out of localStorage into httpOnly cookies (breaks the established stateless Bearer architecture), "hardcoded secrets" in test files (they are intentional local test credentials, documented in test_credentials.md), and the bulk complexity/file-size refactors of server.py and the large page components (high regression risk, no functional benefit right now — tracked in the P3 backlog).
 - Teacher signup code lives in backend/.env → TEACHER_SIGNUP_CODE
 - SEED_DEMO_ACCOUNTS=true in backend/.env (set false in production to skip demo accounts)
 - JWT secret rotated 2026-06 (old tokens invalid)

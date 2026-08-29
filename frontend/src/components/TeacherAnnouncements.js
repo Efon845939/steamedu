@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useState } from 'react';
+import React, { useContext, useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
 import { AuthContext } from '../App';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
@@ -23,18 +23,18 @@ export const TeacherAnnouncements = ({ studentsCount }) => {
   const [form, setForm] = useState({ title: '', body: '' });
   const [sending, setSending] = useState(false);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       const res = await axios.get(`${API}/announcements`);
       setItems(res.data);
     } catch (e) {
       console.error(e);
     }
-  };
+  }, [API]);
 
   useEffect(() => {
     load();
-  }, []);
+  }, [load]);
 
   const send = async (e) => {
     e.preventDefault();
