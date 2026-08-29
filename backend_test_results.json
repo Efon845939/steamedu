@@ -1,0 +1,77 @@
+{
+  "summary": {
+    "total_tests": 11,
+    "passed_tests": 11,
+    "failed_tests": 0,
+    "success_rate": 100.0,
+    "timestamp": "2025-09-27T18:30:47.262807"
+  },
+  "test_results": [
+    {
+      "test": "API Health Check",
+      "success": true,
+      "details": "",
+      "timestamp": "2025-09-27T18:30:46.323288"
+    },
+    {
+      "test": "User Registration",
+      "success": true,
+      "details": "",
+      "timestamp": "2025-09-27T18:30:46.608931"
+    },
+    {
+      "test": "User Login",
+      "success": true,
+      "details": "",
+      "timestamp": "2025-09-27T18:30:46.871096"
+    },
+    {
+      "test": "Get Current User",
+      "success": true,
+      "details": "",
+      "timestamp": "2025-09-27T18:30:46.908525"
+    },
+    {
+      "test": "Seed Sample Data",
+      "success": true,
+      "details": "",
+      "timestamp": "2025-09-27T18:30:46.980873"
+    },
+    {
+      "test": "Get Quizzes",
+      "success": true,
+      "details": "",
+      "timestamp": "2025-09-27T18:30:47.022710"
+    },
+    {
+      "test": "Quiz Attempt",
+      "success": true,
+      "details": "",
+      "timestamp": "2025-09-27T18:30:47.084076"
+    },
+    {
+      "test": "Create Idea",
+      "success": true,
+      "details": "",
+      "timestamp": "2025-09-27T18:30:47.152972"
+    },
+    {
+      "test": "Get Ideas",
+      "success": true,
+      "details": "",
+      "timestamp": "2025-09-27T18:30:47.188384"
+    },
+    {
+      "test": "Like Idea",
+      "success": true,
+      "details": "",
+      "timestamp": "2025-09-27T18:30:47.225293"
+    },
+    {
+      "test": "Get Activities",
+      "success": true,
+      "details": "",
+      "timestamp": "2025-09-27T18:30:47.262141"
+    }
+  ]
+}
