@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone, date
 import jwt
 import bcrypt as bcrypt_lib
 
-from seed_data import QUIZZES, ACTIVITIES, CONTENT_ITEMS, DEMO_IDEAS
+from seed_data import QUIZZES, ACTIVITIES, CONTENT_ITEMS, DEMO_IDEAS, MISCONCEPTIONS, ARENA_CHALLENGES
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -498,6 +498,99 @@ async def submit_quiz_attempt(quiz_id: str, attempt_data: AttemptSubmit, current
             "new_badges": new_badges}
 
 
+# ---------------- Debug Arena ----------------
+# The flawed step, its explanation and misconception stay on the server until the student submits.
+_ARENA_HIDDEN_FIELDS = {"flawed_step", "correct_explanation", "misconception", "debrief"}
+ARENA_STEP_POINTS = 50
+ARENA_EXPLANATION_POINTS = 50
+
+
+def _strip_arena_answers(challenge: dict) -> dict:
+    return {k: v for k, v in challenge.items() if k not in _ARENA_HIDDEN_FIELDS}
+
+
+def _misconception_info(tag: str) -> dict:
+    entry = MISCONCEPTIONS.get(tag, {})
+    return {"tag": tag, "subject": entry.get("subject"), "description": entry.get("description", tag)}
+
+
+class ArenaAttemptSubmit(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    selected_step: Optional[int] = None
+    selected_explanation: Optional[str] = None
+    seconds_used: Optional[int] = None
+
+
+@api_router.get("/arena/challenges")
+async def get_arena_challenges(subject: Optional[str] = None, age_group: Optional[str] = None,
+                               current_user: User = Depends(get_current_user)):
+    query = age_group_query(age_group)
+    if subject:
+        query["subject"] = subject
+    challenges = await db.arena_challenges.find(query, {"_id": 0}).to_list(200)
+    attempts = await db.arena_attempts.find(
+        {"user_id": current_user.id}, {"_id": 0, "challenge_id": 1, "score": 1}).to_list(2000)
+    best = {}
+    for a in attempts:
+        best[a["challenge_id"]] = max(best.get(a["challenge_id"], 0), a["score"])
+    return [{**_strip_arena_answers(c), "attempted": c["id"] in best, "best_score": best.get(c["id"])}
+            for c in challenges]
+
+
+@api_router.get("/arena/challenges/{challenge_id}")
+async def get_arena_challenge(challenge_id: str, current_user: User = Depends(get_current_user)):
+    challenge = await db.arena_challenges.find_one({"id": challenge_id}, {"_id": 0})
+    if not challenge:
+        raise HTTPException(status_code=404, detail="Challenge not found")
+    return _strip_arena_answers(challenge)
+
+
+@api_router.post("/arena/challenges/{challenge_id}/attempt")
+async def submit_arena_attempt(challenge_id: str, data: ArenaAttemptSubmit,
+                               current_user: User = Depends(get_current_user)):
+    challenge = await db.arena_challenges.find_one({"id": challenge_id}, {"_id": 0})
+    if not challenge:
+        raise HTTPException(status_code=404, detail="Challenge not found")
+    step = data.selected_step
+    if step is not None and not 0 <= step < len(challenge["steps"]):
+        raise HTTPException(status_code=400, detail="Selected step is out of range")
+
+    step_correct = step == challenge["flawed_step"]
+    explanation_correct = data.selected_explanation == challenge["correct_explanation"]
+    score = (ARENA_STEP_POINTS if step_correct else 0) + (ARENA_EXPLANATION_POINTS if explanation_correct else 0)
+    # Picking a different step means the student accepted the flawed reasoning as sound.
+    # No pick at all (e.g. the timer ran out) is no evidence either way.
+    misconceptions = []
+    if step is not None and not step_correct:
+        misconceptions.append({"tag": challenge["misconception"], "selected_step": step, "source": "arena"})
+    first_attempt = await db.arena_attempts.find_one(
+        {"challenge_id": challenge_id, "user_id": current_user.id}) is None
+
+    attempt = {
+        "id": str(uuid.uuid4()), "challenge_id": challenge_id, "user_id": current_user.id,
+        "challenge_title": challenge["title"], "subject": challenge.get("subject", "General"),
+        "selected_step": step, "selected_explanation": data.selected_explanation,
+        "step_correct": step_correct, "explanation_correct": explanation_correct,
+        "score": score, "misconceptions": misconceptions,
+        # The timer is for pacing only; time never affects the score, so a client-reported value is safe to keep.
+        "seconds_used": None if data.seconds_used is None else min(max(data.seconds_used, 0), 3600),
+        "completed_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.arena_attempts.insert_one(attempt)
+
+    points_earned = score if first_attempt else 0
+    await award_points(current_user.id, points_earned, "arena")
+    streak = await touch_streak(current_user.id)
+    attempt.pop("_id", None)
+    new_badges = await evaluate_badges(current_user.id)
+    return {**attempt, "flawed_step": challenge["flawed_step"],
+            "correct_explanation": challenge["correct_explanation"],
+            "misconception": _misconception_info(challenge["misconception"]),
+            "debrief": challenge["debrief"],
+            "points_earned": points_earned, "streak_days": streak,
+            "first_attempt": first_attempt, "new_badges": new_badges}
+
+
 # ---------------- Activities ----------------
 @api_router.get("/activities", response_model=List[Activity])
 async def get_activities(subject: Optional[str] = None, difficulty: Optional[str] = None, age_group: Optional[str] = None):
@@ -723,6 +816,58 @@ async def get_verification(current_user: User = Depends(require_teacher)):
             "requirements": {"min_students": VERIFY_MIN_STUDENTS, "min_challenges": VERIFY_MIN_CHALLENGES}}
 
 
+# ---------------- Diagnostics ----------------
+def _latest_per_item(records: list, user_key: str, item_key: str) -> list:
+    """Keep each student's most recent record per quiz, arena challenge or contest."""
+    latest = {}
+    for r in sorted(records, key=lambda r: str(r.get("completed_at") or "")):
+        latest[(r[user_key], r[item_key])] = r
+    return list(latest.values())
+
+
+@api_router.get("/teacher/diagnostics")
+async def get_class_diagnostics(current_user: User = Depends(require_teacher)):
+    students = await db.users.find({"teacher_id": current_user.id}, {"_id": 0, "id": 1, "full_name": 1}).to_list(500)
+    names = {s["id"]: s["full_name"] for s in students}
+    ids = list(names)
+    fields = {"_id": 0, "misconceptions": 1, "completed_at": 1}
+    quiz_attempts = await db.quiz_attempts.find(
+        {"user_id": {"$in": ids}}, {**fields, "user_id": 1, "quiz_id": 1}).to_list(10000)
+    arena_attempts = await db.arena_attempts.find(
+        {"user_id": {"$in": ids}}, {**fields, "user_id": 1, "challenge_id": 1}).to_list(10000)
+    contest_entries = await db.tournament_entries.find(
+        {"student_id": {"$in": ids}, "score": {"$ne": None}},
+        {**fields, "student_id": 1, "tournament_id": 1}).to_list(10000)
+
+    # Only each student's latest attempt per item counts, so a misconception they fixed on a retake drops off.
+    records = (
+        [(r["user_id"], r) for r in _latest_per_item(quiz_attempts, "user_id", "quiz_id")]
+        + [(r["user_id"], r) for r in _latest_per_item(arena_attempts, "user_id", "challenge_id")]
+        + [(r["student_id"], r) for r in _latest_per_item(contest_entries, "student_id", "tournament_id")]
+    )
+
+    # "Assessed" = took something that can reveal a misconception (diagnostic quiz, arena, or contest on one)
+    diagnostic_quiz_ids = {q["id"] for q in await db.quizzes.find({"diagnostic": True}, {"_id": 0, "id": 1}).to_list(200)}
+    diagnostic_contest_ids = {t["id"] for t in await db.tournaments.find(
+        {"quiz_id": {"$in": list(diagnostic_quiz_ids)}}, {"_id": 0, "id": 1}).to_list(500)}
+    assessed = {r["user_id"] for r in quiz_attempts if r["quiz_id"] in diagnostic_quiz_ids}
+    assessed |= {r["user_id"] for r in arena_attempts}
+    assessed |= {r["student_id"] for r in contest_entries if r["tournament_id"] in diagnostic_contest_ids}
+    assessed |= {uid for uid, r in records if r.get("misconceptions")}
+
+    by_tag = {}
+    for uid, r in records:
+        for hit in r.get("misconceptions") or []:
+            row = by_tag.setdefault(hit["tag"], {"students": set(), "occurrences": 0})
+            row["students"].add(uid)
+            row["occurrences"] += 1
+    rows = [{**_misconception_info(tag), "students": len(v["students"]), "occurrences": v["occurrences"],
+             "student_names": sorted(names[u] for u in v["students"])}
+            for tag, v in by_tag.items()]
+    rows.sort(key=lambda r: (-r["students"], -r["occurrences"], r["tag"]))
+    return {"students_total": len(students), "students_assessed": len(assessed), "misconceptions": rows}
+
+
 # ---------------- Stats ----------------
 async def _full_student_stats(user: dict) -> dict:
     uid = user["id"]
@@ -909,6 +1054,10 @@ async def complete_challenge(challenge_id: str, current_user: User = Depends(get
 
 
 # ---------------- Tournaments ----------------
+# Misconception tags are teacher-only diagnostics and hint at the answer key, so rankings never include them.
+_PUBLIC_ENTRY_FIELDS = {"_id": 0, "misconceptions": 0}
+
+
 def _tournament_status(t: dict) -> str:
     now = datetime.now(timezone.utc).isoformat()
     if now < t["start_at"]:
@@ -981,7 +1130,7 @@ async def get_tournaments(current_user: User = Depends(get_current_user)):
         my_entry = None
         if current_user.role == "student":
             entry = await db.tournament_entries.find_one(
-                {"tournament_id": t["id"], "student_id": current_user.id}, {"_id": 0})
+                {"tournament_id": t["id"], "student_id": current_user.id}, _PUBLIC_ENTRY_FIELDS)
             my_entry = entry
         age_ok = t["age_group"] == "all" or t["age_group"] == current_user.age_group
         scope_ok = t["scope"] == "open" or current_user.teacher_id == t["teacher_id"]
@@ -1000,7 +1149,7 @@ async def get_tournament(tournament_id: str, current_user: User = Depends(get_cu
     if not t:
         raise HTTPException(status_code=404, detail="Tournament not found")
     t = await _finalize_tournament(t)
-    entries = await db.tournament_entries.find({"tournament_id": tournament_id}, {"_id": 0}).to_list(500)
+    entries = await db.tournament_entries.find({"tournament_id": tournament_id}, _PUBLIC_ENTRY_FIELDS).to_list(500)
     ranking = sorted([e for e in entries if e["score"] is not None], key=lambda e: e["score"], reverse=True)
     pending = [e for e in entries if e["score"] is None]
     quiz = await db.quizzes.find_one({"id": t["quiz_id"]})
@@ -1047,10 +1196,12 @@ async def submit_tournament(tournament_id: str, attempt_data: AttemptSubmit, cur
     quiz = await db.quizzes.find_one({"id": t["quiz_id"]})
     if not quiz:
         raise HTTPException(status_code=404, detail="Tournament quiz not found")
-    score = _grade(quiz, [a.dict() for a in attempt_data.answers])
+    answers = [a.dict() for a in attempt_data.answers]
+    score = _grade(quiz, answers)
     await db.tournament_entries.update_one(
         {"id": entry["id"]},
-        {"$set": {"score": score, "completed_at": datetime.now(timezone.utc).isoformat()}},
+        {"$set": {"score": score, "misconceptions": _collect_misconceptions(quiz, answers),
+                  "completed_at": datetime.now(timezone.utc).isoformat()}},
     )
     await award_points(current_user.id, TOURNAMENT_POINTS, "contest")
     streak = await touch_streak(current_user.id)
@@ -1291,10 +1442,13 @@ async def seed_sample_data(current_user: User = Depends(require_teacher)):
                                       {"seeded": True})
     content = await upsert_catalog(db.content, CONTENT_ITEMS, {"created_at": now.isoformat(), "seeded": True},
                                    {"seeded": True})
+    arena = await upsert_catalog(db.arena_challenges, ARENA_CHALLENGES, {"created_by": "system", "created_at": now},
+                                 {"created_by": "system"})
 
     if not SEED_DEMO_ACCOUNTS:
         return {"message": "Seed complete (demo accounts disabled)", "quizzes": len(quizzes),
-                "activities": len(activities), "content_items": len(content)}
+                "activities": len(activities), "content_items": len(content),
+                "arena_challenges": len(arena)}
 
     # Demo accounts
     async def ensure_user(username, email, full_name, password, role, age=None, verified=False, teacher_id=None, teacher_name=None, points=0, streak=0):
@@ -1409,7 +1563,7 @@ async def seed_sample_data(current_user: User = Depends(require_teacher)):
             })
 
     return {"message": "Seed complete", "quizzes": len(quizzes), "activities": len(activities),
-            "content_items": len(content)}
+            "content_items": len(content), "arena_challenges": len(arena)}
 
 
 app.include_router(api_router)
@@ -1435,6 +1589,7 @@ async def ensure_indexes():
         (db.announcement_reads, [("announcement_id", 1), ("student_id", 1)], {"unique": True}),
         (db.user_badges, [("user_id", 1), ("key", 1)], {"unique": True}),
         (db.quiz_attempts, [("user_id", 1)], {}),
+        (db.arena_attempts, [("user_id", 1)], {}),
         (db.activity_results, [("user_id", 1)], {}),
         (db.point_events, [("user_id", 1), ("created_at", -1)], {}),
         (db.users, [("teacher_id", 1)], {}),

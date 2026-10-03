@@ -223,23 +223,258 @@ QUIZZES = [
     },
 ]
 
-# Misconception catalogue used by diagnostic quizzes. Categories follow the
-# force-and-motion misconception taxonomy published with the Force Concept
-# Inventory (Hestenes, Wells & Swackhamer, The Physics Teacher, 1992) plus
-# common mass/weight and gravity misconceptions. Questions above are original.
+# Misconception catalogue used by diagnostic quizzes and the Debug Arena.
+# Science categories follow the force-and-motion misconception taxonomy
+# published with the Force Concept Inventory (Hestenes, Wells & Swackhamer,
+# The Physics Teacher, 1992) plus common mass/weight and gravity
+# misconceptions. The other areas list widely reported classroom
+# misconceptions. Questions and scenarios in this file are original.
 MISCONCEPTIONS = {
-    "impetus": "Thinks an object carries a stored 'force of the push' that keeps it moving and runs out",
-    "motion-implies-force": "Thinks constant motion needs a net force in the direction of motion",
-    "force-proportional-to-velocity": "Thinks force sets speed rather than acceleration",
-    "heavier-falls-faster": "Thinks heavier objects fall faster without air resistance",
-    "greater-mass-greater-force": "Thinks the heavier object exerts a larger force in an interaction",
-    "only-active-objects-push": "Thinks only the 'active' object in a collision exerts a force",
-    "damage-shows-force": "Judges force size by damage instead of Newton's third law",
-    "zero-velocity-zero-force": "Thinks a momentarily stopped object has no net force",
-    "no-gravity-in-space": "Thinks gravity disappears in orbit",
-    "gravity-needs-air": "Thinks gravity depends on air or air pressure",
-    "mass-weight-confusion": "Confuses mass with weight",
+    "impetus": {"subject": "Science", "description": "Thinks an object carries a stored 'force of the push' that keeps it moving and runs out"},
+    "motion-implies-force": {"subject": "Science", "description": "Thinks constant motion needs a net force in the direction of motion"},
+    "force-proportional-to-velocity": {"subject": "Science", "description": "Thinks force sets speed rather than acceleration"},
+    "heavier-falls-faster": {"subject": "Science", "description": "Thinks heavier objects fall faster without air resistance"},
+    "greater-mass-greater-force": {"subject": "Science", "description": "Thinks the heavier object exerts a larger force in an interaction"},
+    "only-active-objects-push": {"subject": "Science", "description": "Thinks only the 'active' object in a collision exerts a force"},
+    "damage-shows-force": {"subject": "Science", "description": "Judges force size by damage instead of Newton's third law"},
+    "zero-velocity-zero-force": {"subject": "Science", "description": "Thinks a momentarily stopped object has no net force"},
+    "no-gravity-in-space": {"subject": "Science", "description": "Thinks gravity disappears in orbit"},
+    "gravity-needs-air": {"subject": "Science", "description": "Thinks gravity depends on air or air pressure"},
+    "mass-weight-confusion": {"subject": "Science", "description": "Confuses mass with weight"},
+    "assignment-links-variables": {"subject": "Technology", "description": "Thinks b = a ties the two variables together, so later changes to a also change b"},
+    "bits-bytes-confusion": {"subject": "Technology", "description": "Treats megabits (Mb) and megabytes (MB) as the same unit"},
+    "current-consumed": {"subject": "Engineering", "description": "Thinks components use up electric current, so less flows further along a series circuit"},
+    "machines-reduce-work": {"subject": "Engineering", "description": "Thinks simple machines reduce the work needed rather than trading force for distance"},
+    "style-from-single-feature": {"subject": "Arts", "description": "Assigns an artwork to a movement from one surface feature instead of its overall approach"},
+    "additive-subtractive-mixing": {"subject": "Arts", "description": "Expects paint to mix like light, not seeing that pigments mix subtractively"},
+    "add-numerators-and-denominators": {"subject": "Mathematics", "description": "Adds fractions by adding numerators and denominators separately"},
+    "percent-change-symmetric": {"subject": "Mathematics", "description": "Thinks a p% increase followed by a p% decrease returns to the starting value"},
 }
+
+# Debug Arena: each scenario is a worked solution with exactly one flawed step
+# (the first place the reasoning goes wrong). Students find that step and name
+# the concept it breaks. flawed_step, correct_explanation, misconception and
+# debrief stay on the server until the student submits.
+ARENA_CHALLENGES = [
+    {
+        "title": "The Top of the Throw",
+        "subject": "Science",
+        "age_groups": ["all"],
+        "time_limit_seconds": 90,
+        "problem": "A 0.5 kg ball is thrown straight up. Ignoring air resistance, what is the net force on the ball at its highest point? (g = 9.8 m/s²)",
+        "steps": [
+            "Once the ball leaves the hand, the only force acting on it is gravity.",
+            "At the highest point the ball stops rising for an instant, so its velocity is 0 m/s.",
+            "Since the velocity is zero, the net force on the ball at that instant must also be zero.",
+            "So the net force at the top is 0 N.",
+        ],
+        "explanations": [
+            "Zero velocity does not mean zero force: gravity still pulls down, so the net force is the ball's weight.",
+            "Gravity switches off for an instant at the top of the path.",
+            "The force of the throw is still pushing up at the top and cancels gravity.",
+        ],
+        "flawed_step": 2,
+        "correct_explanation": "Zero velocity does not mean zero force: gravity still pulls down, so the net force is the ball's weight.",
+        "misconception": "zero-velocity-zero-force",
+        "debrief": "Velocity and force are different things. At the top the ball's velocity is zero for an instant, but gravity never stops acting: net force = mg = 0.5 × 9.8 = 4.9 N downward. That is why the ball immediately starts falling — its velocity keeps changing even at the moment it is zero.",
+    },
+    {
+        "title": "An Astronaut on the Moon",
+        "subject": "Science",
+        "age_groups": ["all"],
+        "time_limit_seconds": 90,
+        "problem": "An astronaut has a mass of 60 kg on Earth. What are her mass and weight on the Moon? (g on Earth = 9.8 m/s², g on the Moon ≈ 1.6 m/s²)",
+        "steps": [
+            "On Earth her weight is W = m × g = 60 × 9.8 = 588 N.",
+            "The Moon's gravity is about one sixth of Earth's (1.6 ÷ 9.8 ≈ 0.16).",
+            "Since gravity is about six times weaker, her mass on the Moon is 60 ÷ 6 = 10 kg.",
+            "Her weight on the Moon is W = m × g = 10 × 1.6 = 16 N.",
+        ],
+        "explanations": [
+            "Mass is the amount of matter and does not change with location; only weight depends on gravity.",
+            "The Moon's gravity is actually stronger than Earth's.",
+            "Weight should be found by dividing mass by g, not multiplying.",
+        ],
+        "flawed_step": 2,
+        "correct_explanation": "Mass is the amount of matter and does not change with location; only weight depends on gravity.",
+        "misconception": "mass-weight-confusion",
+        "debrief": "Mass measures how much matter (and inertia) an object has, so it is 60 kg everywhere. Weight is the pull of gravity on that mass: on the Moon W = 60 × 1.6 ≈ 96 N, about one sixth of her 588 N weight on Earth.",
+    },
+    {
+        "title": "Tracing Variables",
+        "subject": "Technology",
+        "age_groups": ["all"],
+        "time_limit_seconds": 90,
+        "problem": "What does this program print?\n\na = 5\nb = a\na = 7\nprint(b)",
+        "steps": [
+            "a = 5 stores the value 5 in a.",
+            "b = a gives b the value of a, which is 5.",
+            "a = 7 changes a to 7. Because b was set equal to a, b changes to 7 as well.",
+            "print(b) therefore prints 7.",
+        ],
+        "explanations": [
+            "Assignment copies the value at that moment; changing a later does not change b.",
+            "print(b) prints the name of the variable, not its value.",
+            "The program crashes because a is assigned twice.",
+        ],
+        "flawed_step": 2,
+        "correct_explanation": "Assignment copies the value at that moment; changing a later does not change b.",
+        "misconception": "assignment-links-variables",
+        "debrief": "b = a copies the value a holds right then (5). Giving a a new value afterwards does not reach back and change b, so the program prints 5. (Two names that share one mutable object, such as a list, behave differently — but here we only reassign a number.)",
+    },
+    {
+        "title": "How Long Is the Download?",
+        "subject": "Technology",
+        "age_groups": ["all"],
+        "time_limit_seconds": 90,
+        "problem": "Your internet plan is 100 Mbps. Ignoring overhead, how long does it take to download a 600 MB game update?",
+        "steps": [
+            "The file size is 600 MB (megabytes).",
+            "The connection speed is 100 Mbps.",
+            "100 Mbps means 100 megabytes per second.",
+            "Time = 600 MB ÷ 100 MB/s = 6 seconds.",
+        ],
+        "explanations": [
+            "Mbps counts megabits, and 1 byte is 8 bits, so 100 Mbps is only 12.5 MB/s.",
+            "The speed should be multiplied by the file size, not divided into it.",
+            "1 MB is 1024 Mb, so the connection is much faster than stated.",
+        ],
+        "flawed_step": 2,
+        "correct_explanation": "Mbps counts megabits, and 1 byte is 8 bits, so 100 Mbps is only 12.5 MB/s.",
+        "misconception": "bits-bytes-confusion",
+        "debrief": "A lowercase b means bits and an uppercase B means bytes; 1 byte = 8 bits. 100 Mbps ÷ 8 = 12.5 MB/s, so the update takes about 600 ÷ 12.5 = 48 seconds in ideal conditions — eight times longer than the flawed answer.",
+    },
+    {
+        "title": "Two Bulbs in Series",
+        "subject": "Engineering",
+        "age_groups": ["all"],
+        "time_limit_seconds": 90,
+        "problem": "A battery is connected to two identical bulbs in series (one after the other in a single loop). How does the brightness of the two bulbs compare?",
+        "steps": [
+            "In a series circuit there is only one path for the charge to flow.",
+            "Current leaves the battery and passes through bulb A before bulb B.",
+            "Bulb A uses up part of the current to make light, so less current is left for bulb B.",
+            "So bulb B glows more dimly than bulb A.",
+        ],
+        "explanations": [
+            "Current is not used up: the same current flows through every part of a series loop. Bulbs transfer energy, not charge.",
+            "Bulb B is dimmer because it is farther from the battery.",
+            "Identical bulbs always have different resistances when connected in series.",
+        ],
+        "flawed_step": 2,
+        "correct_explanation": "Current is not used up: the same current flows through every part of a series loop. Bulbs transfer energy, not charge.",
+        "misconception": "current-consumed",
+        "debrief": "Charge is conserved, so the current is the same everywhere in a single loop. What the bulbs take is energy carried by the charges, which shows up as a voltage drop across each bulb. Identical bulbs get the same current and the same share of the voltage, so they glow equally brightly.",
+    },
+    {
+        "title": "Does a Lever Save Work?",
+        "subject": "Engineering",
+        "age_groups": ["all"],
+        "time_limit_seconds": 120,
+        "problem": "Using a lever, you lift a 200 N rock by 0.1 m while pushing down with only 50 N. How much work do you do? (Assume an ideal, frictionless lever.)",
+        "steps": [
+            "Work done lifting the rock = force × distance = 200 N × 0.1 m = 20 J.",
+            "The lever lets you push with 50 N, which is 4 times less than the rock's weight.",
+            "Because your force is 4 times smaller, the work you do is also 4 times smaller: 20 J ÷ 4 = 5 J.",
+            "So the lever saves you 15 J of work.",
+        ],
+        "explanations": [
+            "A lever trades force for distance: you push with a quarter of the force over four times the distance (0.4 m), so the work is still 20 J.",
+            "The work on the rock should be 200 N ÷ 0.1 m, not 200 N × 0.1 m.",
+            "A lever increases the work needed because the bar adds extra length.",
+        ],
+        "flawed_step": 2,
+        "correct_explanation": "A lever trades force for distance: you push with a quarter of the force over four times the distance (0.4 m), so the work is still 20 J.",
+        "misconception": "machines-reduce-work",
+        "debrief": "Simple machines reduce the force you need, not the work. With a 4:1 lever you push 50 N through 0.4 m: 50 × 0.4 = 20 J, the same as lifting the rock directly. A real lever loses a little to friction, so the work you do is slightly more than 20 J — never less.",
+    },
+    {
+        "title": "Classifying The Starry Night",
+        "subject": "Arts",
+        "age_groups": ["all"],
+        "time_limit_seconds": 120,
+        "problem": "Which art movement does Vincent van Gogh's painting The Starry Night (1889) belong to?",
+        "steps": [
+            "The Starry Night was painted by Vincent van Gogh in June 1889, while he was staying at the asylum in Saint-Rémy-de-Provence, France.",
+            "It shows a swirling night sky over a small village, with a tall cypress tree in the foreground.",
+            "The paint is applied in thick, clearly visible brushstrokes.",
+            "Visible brushstrokes are the defining mark of Impressionism, so The Starry Night is an Impressionist painting.",
+        ],
+        "explanations": [
+            "A movement can't be identified from one surface feature. Van Gogh was a Post-Impressionist who used colour and swirling forms to express feeling rather than to record a moment of natural light.",
+            "The painting is Cubist because the stars are drawn as geometric shapes.",
+            "It belongs to the Renaissance because it is an oil painting on canvas.",
+        ],
+        "flawed_step": 3,
+        "correct_explanation": "A movement can't be identified from one surface feature. Van Gogh was a Post-Impressionist who used colour and swirling forms to express feeling rather than to record a moment of natural light.",
+        "misconception": "style-from-single-feature",
+        "debrief": "Visible brushwork appears in many styles, so on its own it proves little. Impressionists such as Claude Monet used quick strokes to capture changing natural light as they observed it. Van Gogh, a Post-Impressionist, pushed colour and line to express emotion: The Starry Night combines the view from his window with memory and imagination, and its swirling sky is not something anyone could actually see.",
+    },
+    {
+        "title": "Mixing Red, Green and Blue Paint",
+        "subject": "Arts",
+        "age_groups": ["all"],
+        "time_limit_seconds": 90,
+        "problem": "A student mixes equal amounts of red, green and blue paint. What colour will they get?",
+        "steps": [
+            "Red, green and blue are the primary colours that screens use.",
+            "On a screen, red, green and blue light at full strength combine to make white.",
+            "Paint follows the same colour-mixing rules as light, so red, green and blue paint also make white.",
+            "The student will get white paint.",
+        ],
+        "explanations": [
+            "Light mixes additively, but pigments mix subtractively: each pigment absorbs more light, so the mixture gets darker, not whiter.",
+            "Screens actually use red, yellow and blue as their primaries.",
+            "The result depends only on which paint is added first.",
+        ],
+        "flawed_step": 2,
+        "correct_explanation": "Light mixes additively, but pigments mix subtractively: each pigment absorbs more light, so the mixture gets darker, not whiter.",
+        "misconception": "additive-subtractive-mixing",
+        "debrief": "Coloured lights add together, so red, green and blue light reach your eye as white. Paint works the other way: each pigment absorbs (subtracts) part of the light, so mixing more pigments reflects less of it. Red, green and blue paint give a dark, muddy brown. That is why painters and printers use different primaries (such as cyan, magenta and yellow).",
+    },
+    {
+        "title": "Adding Fractions in a Recipe",
+        "subject": "Mathematics",
+        "age_groups": ["all"],
+        "time_limit_seconds": 90,
+        "problem": "A recipe uses 1/2 cup of milk and 1/3 cup of water. How much liquid is that in total?",
+        "steps": [
+            "Total liquid = 1/2 + 1/3 cups.",
+            "To add fractions, add the numerators and add the denominators: (1 + 1)/(2 + 3).",
+            "So the total is 2/5 of a cup.",
+        ],
+        "explanations": [
+            "Fractions need a common denominator before adding: 1/2 + 1/3 = 3/6 + 2/6 = 5/6.",
+            "The fractions should be multiplied instead: 1/2 × 1/3 = 1/6.",
+            "The smaller fraction should be subtracted from the larger one.",
+        ],
+        "flawed_step": 1,
+        "correct_explanation": "Fractions need a common denominator before adding: 1/2 + 1/3 = 3/6 + 2/6 = 5/6.",
+        "misconception": "add-numerators-and-denominators",
+        "debrief": "2/5 is less than 1/2, so the total would be smaller than one of its parts. The denominator names the size of the pieces, and you can only add pieces of the same size: 1/2 = 3/6 and 1/3 = 2/6, which gives 5/6 of a cup.",
+    },
+    {
+        "title": "Price Up, Then on Sale",
+        "subject": "Mathematics",
+        "age_groups": ["all"],
+        "time_limit_seconds": 90,
+        "problem": "A jacket costs $100. The shop raises the price by 20%, then a week later puts it on sale at 20% off. What is the final price?",
+        "steps": [
+            "After a 20% increase the price is 100 × 1.20 = $120.",
+            "A 20% increase followed by a 20% decrease cancel out, because the percentages are the same.",
+            "So the final price is back to $100.",
+        ],
+        "explanations": [
+            "The 20% discount is taken from the new price of $120, so it removes $24, not $20: 120 × 0.80 = $96.",
+            "A percentage can't be applied twice to the same item.",
+            "The increase should be 100 + 20% = $100.20.",
+        ],
+        "flawed_step": 1,
+        "correct_explanation": "The 20% discount is taken from the new price of $120, so it removes $24, not $20: 120 × 0.80 = $96.",
+        "misconception": "percent-change-symmetric",
+        "debrief": "Each percentage is applied to the current price. 20% of $120 is $24, so the sale price is $96. In general, a p% rise then a p% cut multiplies the price by (1 + p)(1 − p) = 1 − p², which is always less than 1.",
+    },
+]
 
 ACTIVITIES = [
     {
