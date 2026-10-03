@@ -88,6 +88,7 @@ class Quiz(BaseModel):
     description: str
     subject: str = "General"
     age_groups: List[str] = ["all"]
+    diagnostic: bool = False
     questions: List[dict]
     created_by: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -385,10 +386,14 @@ async def get_current_user_info(current_user: User = Depends(get_current_user)):
 
 
 # ---------------- Quizzes ----------------
+# Answer keys and misconception tags never leave the server: tag names hint at the right answer.
+_HIDDEN_QUESTION_FIELDS = {"correct_answer", "misconceptions"}
+
+
 def _strip_correct_answers(quiz: dict) -> dict:
     q = dict(quiz)
     q["questions"] = [
-        {k: v for k, v in question.items() if k != "correct_answer"}
+        {k: v for k, v in question.items() if k not in _HIDDEN_QUESTION_FIELDS}
         for question in quiz.get("questions", [])
     ]
     return q
@@ -430,6 +435,21 @@ def _grade(quiz: dict, answers: list) -> int:
     return int((correct / total) * 100) if total else 0
 
 
+def _collect_misconceptions(quiz: dict, answers: list) -> list:
+    """Map each wrong answer whose option is tagged to its misconception tag."""
+    found = []
+    questions = quiz["questions"]
+    for i, answer in enumerate(answers[:len(questions)]):
+        question = questions[i]
+        selected = answer.get("selected")
+        if selected == question.get("correct_answer"):
+            continue
+        tag = (question.get("misconceptions") or {}).get(selected) if isinstance(selected, str) else None
+        if tag:
+            found.append({"question_index": i, "selected": selected, "tag": tag})
+    return found
+
+
 @api_router.post("/quizzes/{quiz_id}/attempt")
 async def submit_quiz_attempt(quiz_id: str, attempt_data: AttemptSubmit, current_user: User = Depends(get_current_user)):
     quiz = await db.quizzes.find_one({"id": quiz_id})
@@ -438,12 +458,13 @@ async def submit_quiz_attempt(quiz_id: str, attempt_data: AttemptSubmit, current
 
     answers = [a.dict() for a in attempt_data.answers]
     score = _grade(quiz, answers)
+    misconceptions = _collect_misconceptions(quiz, answers)
     first_attempt = await db.quiz_attempts.find_one({"quiz_id": quiz_id, "user_id": current_user.id}) is None
 
     attempt = {
         "id": str(uuid.uuid4()), "quiz_id": quiz_id, "user_id": current_user.id,
         "quiz_title": quiz["title"], "subject": quiz.get("subject", "General"),
-        "answers": answers, "score": score,
+        "answers": answers, "score": score, "misconceptions": misconceptions,
         "completed_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.quiz_attempts.insert_one(attempt)

@@ -145,7 +145,101 @@ QUIZZES = [
             {"question": "The limit of (1 + 1/n)ⁿ as n → ∞ is:", "options": ["1", "π", "e", "∞"], "correct_answer": "e"},
         ],
     },
+    # Diagnostic quiz: every tagged wrong option maps to a known misconception
+    # (see MISCONCEPTIONS below). Untagged wrong options are plain errors.
+    {
+        "title": "Forces & Motion: Misconception Check",
+        "description": "Find out which force-and-motion ideas are tripping you up",
+        "subject": "Science",
+        "age_groups": ["13-15", "16-18"],
+        "diagnostic": True,
+        "questions": [
+            {
+                "question": "A hockey puck slides across frictionless ice after being hit. Which horizontal forces act on it while it slides?",
+                "options": ["No horizontal force", "The force of the hit, slowly running out", "A forward force that keeps it moving", "A force that grows as the puck speeds up"],
+                "correct_answer": "No horizontal force",
+                "misconceptions": {
+                    "The force of the hit, slowly running out": "impetus",
+                    "A forward force that keeps it moving": "motion-implies-force",
+                    "A force that grows as the puck speeds up": "force-proportional-to-velocity",
+                },
+            },
+            {
+                "question": "A 1 kg ball and a 5 kg ball of the same size are dropped together from 2 m. Air resistance is negligible. Which lands first?",
+                "options": ["They land at the same time", "The 5 kg ball", "The 1 kg ball"],
+                "correct_answer": "They land at the same time",
+                "misconceptions": {"The 5 kg ball": "heavier-falls-faster"},
+            },
+            {
+                "question": "A truck hits a small car head-on. During the collision, how does the force of the car on the truck compare to the force of the truck on the car?",
+                "options": ["Equal in size", "Smaller, because the car has less mass", "Zero, because the car is the one being hit", "Larger, because the car gets damaged more"],
+                "correct_answer": "Equal in size",
+                "misconceptions": {
+                    "Smaller, because the car has less mass": "greater-mass-greater-force",
+                    "Zero, because the car is the one being hit": "only-active-objects-push",
+                    "Larger, because the car gets damaged more": "damage-shows-force",
+                },
+            },
+            {
+                "question": "A ball is thrown straight up. At its highest point, what is the net force on it?",
+                "options": ["Its weight, pointing down", "Zero", "An upward force from the throw, equal to its weight"],
+                "correct_answer": "Its weight, pointing down",
+                "misconceptions": {
+                    "Zero": "zero-velocity-zero-force",
+                    "An upward force from the throw, equal to its weight": "impetus",
+                },
+            },
+            {
+                "question": "A box is pushed across a rough floor at constant speed. How does the pushing force compare to friction?",
+                "options": ["Equal to friction", "Greater than friction", "Less than friction"],
+                "correct_answer": "Equal to friction",
+                "misconceptions": {"Greater than friction": "motion-implies-force"},
+            },
+            {
+                "question": "Astronauts float inside a space station orbiting about 400 km above Earth. Why?",
+                "options": ["They and the station are falling around Earth together", "There is no gravity in space", "There is no air to push them down", "The station's engines cancel gravity"],
+                "correct_answer": "They and the station are falling around Earth together",
+                "misconceptions": {
+                    "There is no gravity in space": "no-gravity-in-space",
+                    "There is no air to push them down": "gravity-needs-air",
+                },
+            },
+            {
+                "question": "Compared to on Earth, an astronaut's mass on the Moon is:",
+                "options": ["The same", "About one sixth", "Zero"],
+                "correct_answer": "The same",
+                "misconceptions": {"About one sixth": "mass-weight-confusion", "Zero": "mass-weight-confusion"},
+            },
+            {
+                "question": "A ball rolls horizontally off the edge of a table. Ignoring air, what path does it follow?",
+                "options": ["A curve that bends downward right from the edge", "Straight out, then straight down", "Straight out for a while, then a curve down"],
+                "correct_answer": "A curve that bends downward right from the edge",
+                "misconceptions": {
+                    "Straight out, then straight down": "impetus",
+                    "Straight out for a while, then a curve down": "impetus",
+                },
+            },
+        ],
+    },
 ]
+
+# Misconception catalogue used by diagnostic quizzes. Categories follow the
+# force-and-motion misconception taxonomy published with the Force Concept
+# Inventory (Hestenes, Wells & Swackhamer, The Physics Teacher, 1992) plus
+# common mass/weight and gravity misconceptions. Questions above are original.
+MISCONCEPTIONS = {
+    "impetus": "Thinks an object carries a stored 'force of the push' that keeps it moving and runs out",
+    "motion-implies-force": "Thinks constant motion needs a net force in the direction of motion",
+    "force-proportional-to-velocity": "Thinks force sets speed rather than acceleration",
+    "heavier-falls-faster": "Thinks heavier objects fall faster without air resistance",
+    "greater-mass-greater-force": "Thinks the heavier object exerts a larger force in an interaction",
+    "only-active-objects-push": "Thinks only the 'active' object in a collision exerts a force",
+    "damage-shows-force": "Judges force size by damage instead of Newton's third law",
+    "zero-velocity-zero-force": "Thinks a momentarily stopped object has no net force",
+    "no-gravity-in-space": "Thinks gravity disappears in orbit",
+    "gravity-needs-air": "Thinks gravity depends on air or air pressure",
+    "mass-weight-confusion": "Confuses mass with weight",
+}
 
 ACTIVITIES = [
     {
