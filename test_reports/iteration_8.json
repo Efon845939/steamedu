@@ -1,0 +1,53 @@
+{
+  "summary": "Deployment-readiness verification of the 3 backend rewrites (batched GET /api/teacher/students, aggregation-based GET /api/leaderboard/teachers, fully idempotent POST /api/seed-data) plus full student/teacher regression. Added /app/backend/tests/test_v5_deployment_fixes.py (15 tests) which cross-checks the API against ground truth computed directly from Mongo. Ran the whole suite: 129/129 passed (backend_test.py, test_v3_security_features.py, test_v4_announcements_badges.py, test_v5_deployment_fixes.py). Frontend: teacher dashboard 'My Students' numbers verified equal to /api/teacher/students for every mentored student (before and after TEST_* cleanup); maya_r 3 quizzes / avg 87% / 0 activities matches /api/stats/student/{id} exactly; Leaderboards page renders both teacher sections with correct ranks and teacher_demo score 175 (= 0.75*2*100 + 0.25*student_metric, reproduced independently). Seed idempotency: two consecutive seeds left every collection count, every quiz/activity/content id, every quiz attempt, tournament entry, badge, certificate, challenge completion and every user point total byte-identical; a genuine quiz attempt created by alex_chen on a seeded quiz survived a subsequent seed untouched; no duplicate catalog titles; all challenge/contest quiz_id links still resolve. Regression flows re-verified end to end: student login, dashboard (12 cards incl. badges 6/12, weekly recap, announcements, challenges, certificates), quiz take+submit (score/points/streak panel), activity complete (result panel + points), share idea, contest list/detail/age-gating/live ranking, student leaderboard age+subject filters; teacher login, verified badge, stats, create daily challenge, create contest, announcements create + read-counter + cancel/confirm delete, chat search + send message + 'Your student' badge. No console errors on any page. TEST_* data purged with tests/cleanup_test_data.py (46 QA users removed; leaderboards clean, 7 real users left).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/quizzes/{quiz_id}/attempt", "issue": "Body is an untyped dict; a malformed answers payload (e.g. {\"answers\":[0,0,0,0,0]}) reaches _grade() and raises AttributeError -> HTTP 500 ('int' object has no attribute 'get'). Reproduced live; traceback in backend.err.log at server.py:421. Should be a Pydantic model returning 400. POST /api/tournaments/{id}/submit uses the same _grade() and is likely affected."},
+      {"endpoint": "POST /api/seed-data", "issue": "upsert_catalog matches only on {'title': ...}; a teacher-authored quiz/activity/content sharing a seed title would be silently overwritten and re-tagged created_by='system'. Scope the filter (e.g. created_by='system' or a seed_key field)."},
+      {"endpoint": "POST /api/seed-data", "issue": "Demo quiz attempts are upserted with $set on {user_id, quiz_id}; if a demo student's only attempt on a seeded quiz is a genuine one (fresh DB seeded after the student played), its score/answers get overwritten with the demo values. Verified NOT happening on the current DB (demo docs exist separately and real attempts survive), but the write is still unscoped - consider $setOnInsert for score/answers."},
+      {"endpoint": "startup ensure_indexes()", "issue": "Unique indexes (announcement_reads, user_badges) are created on startup with no error handling; on a production DB that already contains duplicates, create_index raises and the app fails to start. Wrap in try/except with a warning log."},
+      {"endpoint": "POST /api/auth/login (rate limit)", "issue": "Lockout state lives in the in-process _rate_buckets dict. It resets on every worker reload/restart and is not shared across workers/replicas, so the 5-attempt lockout is ineffective for any multi-worker deployment. Also made test_v3::test_login_bruteforce_lockout flake once (6th attempt returned 401 instead of 429) when uvicorn --reload restarted mid-run; it passes consistently in isolation and passed in the final full run."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "App.js routing", "issue": "No catch-all route: an unknown path (e.g. /quizzes instead of /quiz) renders a completely blank page below the navbar with no 404 or redirect.", "selector": "n/a", "priority": "LOW"},
+      {"component": "IdeasPage share dialog", "issue": "Share Idea submit stays disabled until a category is picked, but no field is marked required and no hint is shown, so it looks like a dead button after filling title+description.", "selector": "[data-testid=\"submit-idea-btn\"]", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Activities (matching activity)", "issues": ["Drag & drop uses react-beautiful-dnd only; HTML5 drag and rbd keyboard drag (Space + Arrows) both failed to place items reliably in automation, so correct-match scoring cannot be regression-tested. Grading/points/result panel itself works (submitted 0/4 result rendered). Consider a click-to-select fallback for a11y and testability."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_v5_deployment_fixes.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_v3_security_features.py",
+    "/app/backend/tests/test_v4_announcements_badges.py",
+    "/app/test_reports/pytest/pytest_results_i8.xml"
+  ],
+  "action_items": [
+    "Add a Pydantic body model (list of {question_index, selected}) for POST /api/quizzes/{id}/attempt and /api/tournaments/{id}/submit so bad payloads return 400 instead of 500.",
+    "Scope seed upserts: match catalog items on created_by='system' (or a seed_key) and use $setOnInsert for demo attempt score/answers.",
+    "Wrap ensure_indexes() create_index calls in try/except so an existing-duplicate production DB cannot block startup.",
+    "Move login lockout out of process memory (Mongo/Redis) before running >1 worker/replica; today's lockout resets on reload and is per-process.",
+    "Add a catch-all <Route path=\"*\"> (404 or redirect) in App.js.",
+    "Optional: hint/require the category field in the Share Idea dialog."
+  ],
+  "critical_code_review_comments": [
+    "get_my_students(): verified correct - two batched $in queries, best-per-quiz max then rounded average, distinct activity_ids; numbers match Mongo ground truth for all 4 mentored students and match /api/stats/student for maya_r. Note it selects db.users by teacher_id WITHOUT role filter, while teacher_leaderboard counts students_count with role='student'; the two can disagree if a teacher is ever mentored - add role:'student' for consistency.",
+    "teacher_leaderboard(): aggregation ($group best per user+quiz, then avg) reproduces the previous per-attempt scan exactly - independently recomputed teacher_demo's score (175) from raw attempts and matched to <0.2. _id fields excluded, ranks contiguous, best sorted by score desc, popular sorted by (tournament_students, students_count) desc.",
+    "seed_sample_data(): no delete_many anywhere; double-seed is byte-identical across quizzes/activities/content/challenges/tournaments/tournament_entries/quiz_attempts/certificates/user_badges/ideas/challenge_completions/activity_results/users plus all user point totals; catalog ids stable so linked challenge/contest quiz_ids still resolve.",
+    "server.py is 1472 lines - well over the 700-line guideline; split into routers (auth, quizzes, teacher, leaderboard, seed) before further growth.",
+    "Auth playbook checks: bcrypt hashes are $2b$12$ (60 chars) for all users; app is stateless Bearer JWT so httpOnly-cookie/credentialed-CORS items are N/A; CORS_ORIGINS is '*' with allow_credentials correctly disabled - set explicit origins for production."
+  ],
+  "updated_files": ["/app/backend/tests/test_v5_deployment_fixes.py"],
+  "success_rate": {"backend": "100% (129/129 pytest, incl. 15 new deployment-fix tests)", "frontend": "100% of tested flows passed (2 low-priority UI nits)"},
+  "seed_data_creation": "Created and then removed: TEST_i8 challenge 88991, TEST_i8 contest 88991, TEST_i8 announcement 88991 (deleted through the UI confirm-delete flow), TEST_i8 Solar oven idea, plus pytest TEST_* users. All purged via /app/backend/tests/cleanup_test_data.py (46 users). Intentional residual side effects on demo accounts: teststudent has an extra attempt on 'Cells & Chemistry Basics' (20%) and one activity_result on 'Lab Equipment Matching' (0%), alex_chen has one extra attempt on 'Algebra Foundations' (from the seed-survival test), teacher_demo has a chat message to maya_r removed by cleanup.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "teacher_demo/TeacherDemo123!, teststudent/TestPass123!, alex_chen|maya_r|sam_patel /StudentDemo123!, teacher code STEAM-TEACH-2026 (from /app/memory/test_credentials.md)",
+  "context_for_next_testing_agent": "All three rewrites are verified good; iteration 8 suite is /app/backend/tests/test_v5_deployment_fixes.py (uses sync pymongo for ground truth - do NOT reintroduce motor + asyncio.get_event_loop() there, it breaks when other modules own the loop). Gotchas: the quizzes list route is /quiz (not /quizzes) and unknown routes render blank; Share Idea requires a category selection before submit enables; activity drag & drop (react-beautiful-dnd) is not automatable - HTML5 drag_to and keyboard drag both fail to place items, only the submit/scoring path can be checked; teststudent has already attempted both demo contests and sam_patel is age 18+ so he is blocked from 'Autumn Math Sprint' (correct gating) - create a fresh contest or a fresh student for contest-submit coverage; run tests/cleanup_test_data.py after every run (it purges TEST_* users/ideas/challenges/tournaments but NOT announcements - delete those via the UI).",
+  "rca_of_the_issue": "No regression from the three rewrites. The one full-suite failure seen on the first run (test_v3::test_login_bruteforce_lockout, 6th bad login returned 401 instead of 429) is an environment artefact: the tests live under /app/backend, so pytest writing __pycache__ makes uvicorn --reload restart the app and wipe the in-memory _rate_buckets. It passed in isolation and in the final full run (129/129). The underlying design issue (process-local rate limiting) is reported as a deployment-readiness item. The only new live 500 found is unvalidated input on POST /api/quizzes/{id}/attempt (server.py:421 _grade assumes each answer is a dict)."
+}

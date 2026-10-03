@@ -8,8 +8,8 @@ import re
 import time
 import logging
 from pathlib import Path
-from pydantic import BaseModel, Field, EmailStr
-from typing import List, Optional
+from pydantic import BaseModel, Field, EmailStr, ConfigDict
+from typing import List, Optional, Any
 import uuid
 from datetime import datetime, timedelta, timezone, date
 import jwt
@@ -313,6 +313,8 @@ def age_group_query(age_group: Optional[str]) -> dict:
 
 
 # ---------------- Rate limiting (in-memory sliding window) ----------------
+LOGIN_FAIL_MAX = 5
+LOGIN_FAIL_WINDOW = 300
 _rate_buckets = {}
 
 
@@ -368,17 +370,17 @@ async def register(user_data: UserCreate, request: Request):
 
 @api_router.post("/auth/login", response_model=Token)
 async def login(user_data: UserLogin, request: Request):
+    # Failed-login lockout is stored in Mongo so it holds across workers/replicas
     fail_key = f"login:{_client_ip(request)}:{user_data.username.lower()}"
-    now = time.time()
-    recent_failures = [t for t in _rate_buckets.get(fail_key, []) if now - t < 300]
-    if len(recent_failures) >= 5:
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=LOGIN_FAIL_WINDOW)
+    recent_failures = await db.login_failures.count_documents({"key": fail_key, "at": {"$gt": cutoff}})
+    if recent_failures >= LOGIN_FAIL_MAX:
         raise HTTPException(status_code=429, detail="Too many failed login attempts. Please try again in a few minutes.")
     user = await db.users.find_one({"username": user_data.username})
     if not user or not verify_password(user_data.password, user["password"]):
-        recent_failures.append(now)
-        _rate_buckets[fail_key] = recent_failures
+        await db.login_failures.insert_one({"key": fail_key, "at": datetime.now(timezone.utc)})
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    _rate_buckets.pop(fail_key, None)
+    await db.login_failures.delete_many({"key": fail_key})
     return Token(access_token=create_access_token({"sub": user["username"]}), token_type="bearer")
 
 
@@ -414,6 +416,16 @@ async def get_quiz(quiz_id: str):
     return Quiz(**_strip_correct_answers(quiz))
 
 
+class QuizAnswer(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    question_index: Optional[int] = None
+    selected: Optional[Any] = None
+
+
+class AttemptSubmit(BaseModel):
+    answers: List[QuizAnswer] = []
+
+
 def _grade(quiz: dict, answers: list) -> int:
     correct = 0
     total = len(quiz["questions"])
@@ -424,12 +436,12 @@ def _grade(quiz: dict, answers: list) -> int:
 
 
 @api_router.post("/quizzes/{quiz_id}/attempt")
-async def submit_quiz_attempt(quiz_id: str, attempt_data: dict, current_user: User = Depends(get_current_user)):
+async def submit_quiz_attempt(quiz_id: str, attempt_data: AttemptSubmit, current_user: User = Depends(get_current_user)):
     quiz = await db.quizzes.find_one({"id": quiz_id})
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found")
 
-    answers = attempt_data.get("answers", [])
+    answers = [a.dict() for a in attempt_data.answers]
     score = _grade(quiz, answers)
     first_attempt = await db.quiz_attempts.find_one({"quiz_id": quiz_id, "user_id": current_user.id}) is None
 
@@ -717,13 +729,29 @@ async def _student_stats(uid: str) -> dict:
 @api_router.get("/teacher/students")
 async def get_my_students(current_user: User = Depends(require_teacher)):
     students = await db.users.find({"teacher_id": current_user.id}).to_list(200)
+    if not students:
+        return []
+    ids = [s["id"] for s in students]
+    attempts = await db.quiz_attempts.find(
+        {"user_id": {"$in": ids}}, {"_id": 0, "user_id": 1, "quiz_id": 1, "score": 1}).to_list(5000)
+    results = await db.activity_results.find(
+        {"user_id": {"$in": ids}}, {"_id": 0, "user_id": 1, "activity_id": 1}).to_list(5000)
+    best_by_user = {}
+    for a in attempts:
+        per_quiz = best_by_user.setdefault(a["user_id"], {})
+        per_quiz[a["quiz_id"]] = max(per_quiz.get(a["quiz_id"], 0), a["score"])
+    acts_by_user = {}
+    for r in results:
+        acts_by_user.setdefault(r["user_id"], set()).add(r["activity_id"])
+
     result = []
     for s in students:
-        stats = await _student_stats(s["id"])
+        best = best_by_user.get(s["id"], {})
+        avg = round(sum(best.values()) / len(best)) if best else 0
         result.append({**safe_user(s), "last_active": s.get("last_active"),
-                       "quizzes_completed": stats["quizzes_completed"],
-                       "avg_score": stats["avg_score"],
-                       "activities_completed": stats["activities_completed"]})
+                       "quizzes_completed": len(best),
+                       "avg_score": avg,
+                       "activities_completed": len(acts_by_user.get(s["id"], set()))})
     return result
 
 
@@ -1048,7 +1076,7 @@ async def join_tournament(tournament_id: str, current_user: User = Depends(get_c
 
 
 @api_router.post("/tournaments/{tournament_id}/submit")
-async def submit_tournament(tournament_id: str, attempt_data: dict, current_user: User = Depends(get_current_user)):
+async def submit_tournament(tournament_id: str, attempt_data: AttemptSubmit, current_user: User = Depends(get_current_user)):
     t = await db.tournaments.find_one({"id": tournament_id})
     if not t:
         raise HTTPException(status_code=404, detail="Tournament not found")
@@ -1062,7 +1090,7 @@ async def submit_tournament(tournament_id: str, attempt_data: dict, current_user
     quiz = await db.quizzes.find_one({"id": t["quiz_id"]})
     if not quiz:
         raise HTTPException(status_code=404, detail="Tournament quiz not found")
-    score = _grade(quiz, attempt_data.get("answers", []))
+    score = _grade(quiz, [a.dict() for a in attempt_data.answers])
     await db.tournament_entries.update_one(
         {"id": entry["id"]},
         {"$set": {"score": score, "completed_at": datetime.now(timezone.utc).isoformat()}},
@@ -1229,18 +1257,23 @@ async def student_leaderboard(age_group: str = "all", subject: Optional[str] = N
 async def teacher_leaderboard(current_user: User = Depends(get_current_user)):
     teachers = await db.users.find({"role": "teacher"}).to_list(500)
     tournaments = await db.tournaments.find({}, {"_id": 0}).to_list(500)
-    entries = await db.tournament_entries.find({}, {"_id": 0}).to_list(5000)
-    attempts = await db.quiz_attempts.find({}, {"_id": 0, "user_id": 1, "quiz_id": 1, "score": 1}).to_list(20000)
-    best_by_user = {}
-    for a in attempts:
-        u = best_by_user.setdefault(a["user_id"], {})
-        u[a["quiz_id"]] = max(u.get(a["quiz_id"], 0), a["score"])
+    entries = await db.tournament_entries.find(
+        {}, {"_id": 0, "tournament_id": 1, "student_id": 1}).to_list(5000)
 
-    all_students = await db.users.find({"role": "student"}).to_list(2000)
+    all_students = await db.users.find({"role": "student", "teacher_id": {"$ne": None}}).to_list(2000)
     students_by_teacher = {}
     for s in all_students:
-        if s.get("teacher_id"):
-            students_by_teacher.setdefault(s["teacher_id"], []).append(s)
+        students_by_teacher.setdefault(s["teacher_id"], []).append(s)
+
+    # Per-student average of best quiz scores, aggregated in Mongo (no full-collection scan)
+    avg_by_user = {}
+    if all_students:
+        cursor = db.quiz_attempts.aggregate([
+            {"$match": {"user_id": {"$in": [s["id"] for s in all_students]}}},
+            {"$group": {"_id": {"u": "$user_id", "q": "$quiz_id"}, "best": {"$max": "$score"}}},
+            {"$group": {"_id": "$_id.u", "total": {"$sum": "$best"}, "quizzes": {"$sum": 1}}},
+        ])
+        avg_by_user = {r["_id"]: (r["total"] / r["quizzes"] if r["quizzes"] else 0) async for r in cursor}
 
     rows = []
     for t in teachers:
@@ -1250,11 +1283,7 @@ async def teacher_leaderboard(current_user: User = Depends(get_current_user)):
         tournament_students = len({e["student_id"] for e in entries if e["tournament_id"] in my_t_ids})
         my_students = students_by_teacher.get(t["id"], [])
         if my_students:
-            metrics = []
-            for s in my_students:
-                best = best_by_user.get(s["id"], {})
-                avg = sum(best.values()) / len(best) if best else 0
-                metrics.append(avg + s.get("streak_days", 0) * 10)
+            metrics = [avg_by_user.get(s["id"], 0) + s.get("streak_days", 0) * 10 for s in my_students]
             student_metric = sum(metrics) / len(metrics)
         else:
             student_metric = 0
@@ -1285,16 +1314,26 @@ async def seed_sample_data(current_user: User = Depends(require_teacher)):
         {"$set": {"role": "student", "points": 0, "streak_days": 0, "verified": False}},
     )
 
-    await db.quizzes.delete_many({"created_by": "system"})
-    await db.activities.delete_many({})
-    await db.content.delete_many({})
+    # Idempotent content upserts — never deletes existing rows or student progress
+    await db.activities.update_many({"seeded": {"$exists": False}}, {"$set": {"seeded": True}})
+    await db.content.update_many({"seeded": {"$exists": False}}, {"$set": {"seeded": True}})
 
-    quizzes = [{**q, "id": str(uuid.uuid4()), "created_by": "system", "created_at": now} for q in QUIZZES]
-    activities = [{**a, "id": str(uuid.uuid4()), "created_at": now} for a in ACTIVITIES]
-    content = [{**c, "id": str(uuid.uuid4()), "created_at": now.isoformat()} for c in CONTENT_ITEMS]
-    await db.quizzes.insert_many(quizzes)
-    await db.activities.insert_many(activities)
-    await db.content.insert_many(content)
+    async def upsert_catalog(collection, items, extra, match_extra):
+        out = []
+        for item in items:
+            doc = {**item, **extra}
+            match = {"title": item["title"], **match_extra}
+            await collection.update_one(
+                match, {"$set": doc, "$setOnInsert": {"id": str(uuid.uuid4())}}, upsert=True)
+            out.append(await collection.find_one(match, {"_id": 0}))
+        return out
+
+    quizzes = await upsert_catalog(db.quizzes, QUIZZES, {"created_by": "system", "created_at": now},
+                                   {"created_by": "system"})
+    activities = await upsert_catalog(db.activities, ACTIVITIES, {"created_at": now, "seeded": True},
+                                      {"seeded": True})
+    content = await upsert_catalog(db.content, CONTENT_ITEMS, {"created_at": now.isoformat(), "seeded": True},
+                                   {"seeded": True})
 
     if not SEED_DEMO_ACCOUNTS:
         return {"message": "Seed complete (demo accounts disabled)", "quizzes": len(quizzes),
@@ -1304,7 +1343,7 @@ async def seed_sample_data(current_user: User = Depends(require_teacher)):
     async def ensure_user(username, email, full_name, password, role, age=None, verified=False, teacher_id=None, teacher_name=None, points=0, streak=0):
         existing = await db.users.find_one({"username": username})
         if existing:
-            updates = {"points": points, "streak_days": streak, "verified": verified}
+            updates = {"verified": verified}
             if age is not None:
                 updates.update({"age": age, "age_group": age_to_group(age)})
             if teacher_id:
@@ -1336,9 +1375,7 @@ async def seed_sample_data(current_user: User = Depends(require_teacher)):
         await db.users.update_one({"id": ts["id"]}, {"$set": {
             "age": 16, "age_group": "16-18", "teacher_id": teacher_id, "teacher_name": "Dr. Sarah Mitchell"}})
 
-    # Demo quiz attempts (fresh each seed so quiz ids stay valid)
-    demo_ids = [alex_id, maya_id, sam_id]
-    await db.quiz_attempts.delete_many({"user_id": {"$in": demo_ids}})
+    # Demo quiz attempts (upserted per student+quiz — no student progress is deleted)
     quiz_by_title = {q["title"]: q for q in quizzes}
     demo_attempts = [
         (alex_id, "Space & Our Solar System", 80), (alex_id, "Algebra Foundations", 60),
@@ -1348,56 +1385,62 @@ async def seed_sample_data(current_user: User = Depends(require_teacher)):
     ]
     for uid, title, score in demo_attempts:
         q = quiz_by_title[title]
-        await db.quiz_attempts.insert_one({
-            "id": str(uuid.uuid4()), "quiz_id": q["id"], "user_id": uid,
-            "quiz_title": title, "subject": q["subject"], "answers": [], "score": score,
-            "completed_at": now.isoformat(),
-        })
+        await db.quiz_attempts.update_one(
+            {"user_id": uid, "quiz_id": q["id"]},
+            {"$setOnInsert": {"id": str(uuid.uuid4()), "quiz_title": title, "subject": q["subject"],
+                              "answers": [], "score": score, "completed_at": now.isoformat()}},
+            upsert=True,
+        )
 
-    # Demo challenges (today) + tournaments from teacher_demo
-    old_tournaments = await db.tournaments.find({"teacher_id": teacher_id}).to_list(100)
-    old_t_ids = [t["id"] for t in old_tournaments]
-    await db.tournament_entries.delete_many({"tournament_id": {"$in": old_t_ids}})
-    await db.tournaments.delete_many({"teacher_id": teacher_id})
-    await db.challenges.delete_many({"teacher_id": teacher_id})
-    await db.challenge_completions.delete_many({})
-
+    # Demo challenges (today) + contests from teacher_demo — all upserted, nothing removed
     math_quiz = quiz_by_title["Geometry & Trigonometry"]
     science_quiz = quiz_by_title["Cells & Chemistry Basics"]
-    await db.challenges.insert_many([
-        {"id": str(uuid.uuid4()), "teacher_id": teacher_id, "teacher_name": "Dr. Sarah Mitchell",
-         "title": "Read one Science article", "description": "Pick any article in the Science section of the Content hub and summarize it in 3 sentences in your notebook.",
-         "type": "task", "quiz_id": None, "points": 20, "date": date.today().isoformat(),
-         "created_at": now.isoformat()},
-        {"id": str(uuid.uuid4()), "teacher_id": teacher_id, "teacher_name": "Dr. Sarah Mitchell",
-         "title": "Ace the Geometry quiz", "description": "Score as high as you can on the Geometry & Trigonometry quiz.",
-         "type": "quiz", "quiz_id": math_quiz["id"], "points": 30, "date": date.today().isoformat(),
-         "created_at": now.isoformat()},
-        {"id": str(uuid.uuid4()), "teacher_id": teacher_id, "teacher_name": "Dr. Sarah Mitchell",
-         "title": "Share one project idea", "description": "Post one creative STEAM project idea in the Ideas hub.",
-         "type": "task", "quiz_id": None, "points": 15, "date": date.today().isoformat(),
-         "created_at": now.isoformat()},
-    ])
+    today = date.today().isoformat()
+    demo_challenges = [
+        {"title": "Read one Science article", "description": "Pick any article in the Science section of the Content hub and summarize it in 3 sentences in your notebook.",
+         "type": "task", "quiz_id": None, "points": 20},
+        {"title": "Ace the Geometry quiz", "description": "Score as high as you can on the Geometry & Trigonometry quiz.",
+         "type": "quiz", "quiz_id": math_quiz["id"], "points": 30},
+        {"title": "Share one project idea", "description": "Post one creative STEAM project idea in the Ideas hub.",
+         "type": "task", "quiz_id": None, "points": 15},
+    ]
+    for ch in demo_challenges:
+        await db.challenges.update_one(
+            {"teacher_id": teacher_id, "title": ch["title"], "date": today},
+            {"$set": {**ch, "teacher_id": teacher_id, "teacher_name": "Dr. Sarah Mitchell",
+                      "date": today, "created_at": now.isoformat()},
+             "$setOnInsert": {"id": str(uuid.uuid4())}},
+            upsert=True,
+        )
 
-    t1_id = str(uuid.uuid4())
-    t2_id = str(uuid.uuid4())
-    await db.tournaments.insert_many([
-        {"id": t1_id, "title": "Autumn Math Sprint", "description": "One shot at the Geometry & Trigonometry quiz — the highest score wins a certificate.",
-         "subject": "Mathematics", "age_group": "16-18", "scope": "open", "quiz_id": math_quiz["id"],
-         "teacher_id": teacher_id, "teacher_name": "Dr. Sarah Mitchell", "is_professional": True,
-         "start_at": (now - timedelta(hours=1)).isoformat(), "end_at": (now + timedelta(days=7)).isoformat(),
-         "finalized": False, "created_at": now.isoformat()},
-        {"id": t2_id, "title": "Science Explorers Cup", "description": "Open to all ages — test your cell biology and chemistry knowledge.",
-         "subject": "Science", "age_group": "all", "scope": "open", "quiz_id": science_quiz["id"],
-         "teacher_id": teacher_id, "teacher_name": "Dr. Sarah Mitchell", "is_professional": True,
-         "start_at": (now - timedelta(hours=1)).isoformat(), "end_at": (now + timedelta(days=10)).isoformat(),
-         "finalized": False, "created_at": now.isoformat()},
-    ])
-    await db.tournament_entries.insert_one({
-        "id": str(uuid.uuid4()), "tournament_id": t1_id, "student_id": maya_id,
-        "student_name": "Maya Robinson", "age_group": "16-18", "score": 80,
-        "joined_at": now.isoformat(), "completed_at": now.isoformat(),
-    })
+    demo_contests = [
+        {"title": "Autumn Math Sprint", "description": "One shot at the Geometry & Trigonometry quiz — the highest score wins a certificate.",
+         "subject": "Mathematics", "age_group": "16-18", "quiz_id": math_quiz["id"], "days": 7},
+        {"title": "Science Explorers Cup", "description": "Open to all ages — test your cell biology and chemistry knowledge.",
+         "subject": "Science", "age_group": "all", "quiz_id": science_quiz["id"], "days": 10},
+    ]
+    for c in demo_contests:
+        await db.tournaments.update_one(
+            {"teacher_id": teacher_id, "title": c["title"]},
+            {"$set": {"title": c["title"], "description": c["description"], "subject": c["subject"],
+                      "age_group": c["age_group"], "scope": "open", "quiz_id": c["quiz_id"],
+                      "teacher_id": teacher_id, "teacher_name": "Dr. Sarah Mitchell",
+                      "is_professional": True,
+                      "start_at": (now - timedelta(hours=1)).isoformat(),
+                      "end_at": (now + timedelta(days=c["days"])).isoformat(),
+                      "finalized": False},
+             "$setOnInsert": {"id": str(uuid.uuid4()), "created_at": now.isoformat()}},
+            upsert=True,
+        )
+
+    math_contest = await db.tournaments.find_one({"teacher_id": teacher_id, "title": "Autumn Math Sprint"})
+    await db.tournament_entries.update_one(
+        {"tournament_id": math_contest["id"], "student_id": maya_id},
+        {"$set": {"student_name": "Maya Robinson", "age_group": "16-18", "score": 80,
+                  "completed_at": now.isoformat()},
+         "$setOnInsert": {"id": str(uuid.uuid4()), "joined_at": now.isoformat()}},
+        upsert=True,
+    )
 
     # Demo ideas
     if await db.ideas.count_documents({}) == 0:
@@ -1429,10 +1472,23 @@ logger = logging.getLogger(__name__)
 
 @app.on_event("startup")
 async def ensure_indexes():
-    await db.announcements.create_index("recipient_ids")
-    await db.announcements.create_index("teacher_id")
-    await db.announcement_reads.create_index([("announcement_id", 1), ("student_id", 1)], unique=True)
-    await db.user_badges.create_index([("user_id", 1), ("key", 1)], unique=True)
+    specs = [
+        (db.announcements, [("recipient_ids", 1)], {}),
+        (db.announcements, [("teacher_id", 1)], {}),
+        (db.announcement_reads, [("announcement_id", 1), ("student_id", 1)], {"unique": True}),
+        (db.user_badges, [("user_id", 1), ("key", 1)], {"unique": True}),
+        (db.quiz_attempts, [("user_id", 1)], {}),
+        (db.activity_results, [("user_id", 1)], {}),
+        (db.point_events, [("user_id", 1), ("created_at", -1)], {}),
+        (db.users, [("teacher_id", 1)], {}),
+        (db.login_failures, [("at", 1)], {"expireAfterSeconds": LOGIN_FAIL_WINDOW}),
+        (db.login_failures, [("key", 1)], {}),
+    ]
+    for collection, keys, opts in specs:
+        try:
+            await collection.create_index(keys, **opts)
+        except Exception as e:  # duplicates or conflicting options must not block startup
+            logger.warning("Index %s on %s skipped: %s", keys, collection.name, e)
 
 
 @app.on_event("shutdown")

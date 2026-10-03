@@ -199,7 +199,7 @@ const IdeasPage = () => {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="idea-category">Category</Label>
+                  <Label htmlFor="idea-category">Category <span className="text-red-500">*</span></Label>
                   <Select value={newIdea.category} onValueChange={(value) => setNewIdea({ ...newIdea, category: value })}>
                     <SelectTrigger data-testid="idea-category-select">
                       <SelectValue placeholder="Choose a STEAM category" />
@@ -210,6 +210,11 @@ const IdeasPage = () => {
                       ))}
                     </SelectContent>
                   </Select>
+                  {!newIdea.category && (
+                    <p className="text-xs text-gray-500" data-testid="idea-category-hint">
+                      Pick a category to enable sharing.
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="idea-description">Description</Label>

@@ -11,6 +11,7 @@ import ActivitiesPage from './components/ActivitiesPage';
 import IdeasPage from './components/IdeasPage';
 import IdeaDetailPage from './components/IdeaDetailPage';
 import ContentHub from './components/ContentHub';
+import NotFoundPage from './components/NotFoundPage';
 import LeaderboardPage from './components/LeaderboardPage';
 import ChatPage from './components/ChatPage';
 import ContestsPage from './components/ContestsPage';
@@ -89,6 +90,7 @@ function App() {
             <Route path="/contests" element={user ? <ContestsPage /> : <Navigate to="/auth" />} />
             <Route path="/tournaments" element={<Navigate to="/contests" />} />
             <Route path="/content" element={<ContentHub />} />
+            <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </BrowserRouter>
         <Toaster position="top-center" richColors />
