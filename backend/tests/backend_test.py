@@ -663,51 +663,31 @@ class TestLeaderboards:
                    for x in d["popular"])
 
 
-# ---------------- Chat & Mentorship ----------------
-class TestChat:
+# ---------------- Mentorship ----------------
+class TestMentorship:
     def test_search_users(self, teacher_token):
         r = requests.get(f"{API}/users/search", params={"q": "maya"}, headers=_hdr(teacher_token), timeout=30)
         assert r.status_code == 200
         rows = r.json()
         assert any(x["username"] == "maya_r" for x in rows)
         for x in rows:
+            assert x["role"] == "student"
             assert "password" not in x and "email" not in x
         assert requests.get(f"{API}/users/search", params={"q": "  "},
                             headers=_hdr(teacher_token), timeout=30).json() == []
 
-    def test_send_and_read_flow(self, student_token, teacher_token, teacher_me):
-        me = requests.get(f"{API}/auth/me", headers=_hdr(student_token), timeout=30).json()
-        text = f"TEST_msg {uuid.uuid4().hex[:6]}"
-        send = requests.post(f"{API}/chat/send", json={"recipient_id": teacher_me["id"], "text": text},
-                             headers=_hdr(student_token), timeout=30)
-        assert send.status_code == 200, send.text
-        assert send.json()["read"] is False
-        assert "_id" not in send.json()
+    def test_search_teacher_only(self, student_token):
+        r = requests.get(f"{API}/users/search", params={"q": "maya"}, headers=_hdr(student_token), timeout=30)
+        assert r.status_code == 403
 
-        convs = requests.get(f"{API}/chat/conversations", headers=_hdr(teacher_token), timeout=30).json()
-        conv = next((c for c in convs if c["id"] == me["id"]), None)
-        assert conv is not None, convs
-        assert conv["unread"] >= 1
-        assert conv["last_message"] == text
+    def test_search_never_returns_teachers(self, teacher_token):
+        rows = requests.get(f"{API}/users/search", params={"q": "teacher"}, headers=_hdr(teacher_token), timeout=30).json()
+        assert all(x["role"] == "student" for x in rows)
 
-        thread = requests.get(f"{API}/chat/with/{me['id']}", headers=_hdr(teacher_token), timeout=30).json()
-        assert thread["partner"]["username"] == "teststudent"
-        assert any(m["text"] == text for m in thread["messages"])
-
-        convs2 = requests.get(f"{API}/chat/conversations", headers=_hdr(teacher_token), timeout=30).json()
-        conv2 = next(c for c in convs2 if c["id"] == me["id"])
-        assert conv2["unread"] == 0
-
-        # reply from teacher
-        reply = requests.post(f"{API}/chat/send", json={"recipient_id": me["id"], "text": "TEST_reply"},
-                              headers=_hdr(teacher_token), timeout=30)
-        assert reply.status_code == 200
-
-    def test_send_errors(self, student_token, teacher_me):
-        assert requests.post(f"{API}/chat/send", json={"recipient_id": "nope", "text": "hi"},
-                             headers=_hdr(student_token), timeout=30).status_code == 404
-        assert requests.post(f"{API}/chat/send", json={"recipient_id": teacher_me["id"], "text": "  "},
-                             headers=_hdr(student_token), timeout=30).status_code == 400
+    def test_chat_removed(self, student_token):
+        for path in ("/chat/conversations", "/chat/send"):
+            r = requests.get(f"{API}{path}", headers=_hdr(student_token), timeout=30)
+            assert r.status_code in (404, 405)
 
     def test_add_student_mentorship(self, teacher_token, teacher_me):
         r, payload = _register(role="student", age=15)

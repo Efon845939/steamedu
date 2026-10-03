@@ -392,7 +392,7 @@ class TestRegressionSmoke:
 
     @pytest.mark.parametrize("path", [
         "/stats/me", "/stats/weekly", "/ideas", "/ideas/spotlights", "/certificates/me",
-        "/challenges/today", "/chat/conversations", "/announcements",
+        "/challenges/today", "/announcements",
     ])
     def test_student_authenticated_endpoints(self, student_token, path):
         r = requests.get(f"{API}{path}", headers=_hdr(student_token), timeout=30)

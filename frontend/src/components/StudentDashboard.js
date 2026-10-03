@@ -8,7 +8,7 @@ import { Badge } from './ui/badge';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { subjectEmoji, formatApiError, firstName } from '../lib/steam';
-import { Flame, Star, Trophy, MessageCircle, Award, CheckCircle2 } from 'lucide-react';
+import { Flame, Star, Trophy, Award, CheckCircle2 } from 'lucide-react';
 import { WeeklyRecap } from './WeeklyRecap';
 import { CertificateModal } from './CertificateModal';
 import { BadgesCard } from './BadgesCard';
@@ -64,7 +64,7 @@ const StudentDashboard = ({ stats, refreshStats }) => {
             <div className="text-xl text-gray-600">
               {stats.teacher_name
                 ? <>Your mentor: <span className="font-semibold text-emerald-700" data-testid="mentor-name">{stats.teacher_name}</span></>
-                : 'No mentor yet — teachers can add you as a student via Chat.'}
+                : 'No mentor yet — your teacher can add you using your username.'}
               {stats.age_group && <Badge variant="outline" className="ml-3">Age group {stats.age_group}</Badge>}
             </div>
           </div>
@@ -203,12 +203,11 @@ const StudentDashboard = ({ stats, refreshStats }) => {
               </CardTitle>
               <CardDescription>Jump into your learning activities</CardDescription>
             </CardHeader>
-            <CardContent className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            <CardContent className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
               <Link to="/quiz"><Button className="w-full justify-start bg-emerald-600 hover:bg-emerald-700" data-testid="take-quiz-btn">📝 Quizzes</Button></Link>
               <Link to="/activities"><Button variant="outline" className="w-full justify-start border-purple-600 text-purple-600 hover:bg-purple-50" data-testid="explore-activities-btn">🎯 Activities</Button></Link>
               <Link to="/contests"><Button variant="outline" className="w-full justify-start border-amber-600 text-amber-600 hover:bg-amber-50" data-testid="contests-btn"><Trophy className="w-4 h-4 mr-2" />Contests</Button></Link>
               <Link to="/leaderboard"><Button variant="outline" className="w-full justify-start border-blue-600 text-blue-600 hover:bg-blue-50" data-testid="leaderboard-btn">🏆 Leaderboard</Button></Link>
-              <Link to="/chat"><Button variant="outline" className="w-full justify-start border-teal-600 text-teal-600 hover:bg-teal-50" data-testid="chat-btn"><MessageCircle className="w-4 h-4 mr-2" />Chat</Button></Link>
               <Link to="/content"><Button variant="outline" className="w-full justify-start border-green-600 text-green-600 hover:bg-green-50" data-testid="browse-content-btn">📚 Content</Button></Link>
             </CardContent>
           </Card>

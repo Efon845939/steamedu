@@ -88,6 +88,7 @@ class Quiz(BaseModel):
     description: str
     subject: str = "General"
     age_groups: List[str] = ["all"]
+    diagnostic: bool = False
     questions: List[dict]
     created_by: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -129,11 +130,6 @@ class Activity(BaseModel):
 
 class ActivityCompletion(BaseModel):
     score: int
-
-
-class MessageCreate(BaseModel):
-    recipient_id: str
-    text: str
 
 
 class ChallengeCreate(BaseModel):
@@ -390,10 +386,14 @@ async def get_current_user_info(current_user: User = Depends(get_current_user)):
 
 
 # ---------------- Quizzes ----------------
+# Answer keys and misconception tags never leave the server: tag names hint at the right answer.
+_HIDDEN_QUESTION_FIELDS = {"correct_answer", "misconceptions"}
+
+
 def _strip_correct_answers(quiz: dict) -> dict:
     q = dict(quiz)
     q["questions"] = [
-        {k: v for k, v in question.items() if k != "correct_answer"}
+        {k: v for k, v in question.items() if k not in _HIDDEN_QUESTION_FIELDS}
         for question in quiz.get("questions", [])
     ]
     return q
@@ -435,6 +435,21 @@ def _grade(quiz: dict, answers: list) -> int:
     return int((correct / total) * 100) if total else 0
 
 
+def _collect_misconceptions(quiz: dict, answers: list) -> list:
+    """Map each wrong answer whose option is tagged to its misconception tag."""
+    found = []
+    questions = quiz["questions"]
+    for i, answer in enumerate(answers[:len(questions)]):
+        question = questions[i]
+        selected = answer.get("selected")
+        if selected == question.get("correct_answer"):
+            continue
+        tag = (question.get("misconceptions") or {}).get(selected) if isinstance(selected, str) else None
+        if tag:
+            found.append({"question_index": i, "selected": selected, "tag": tag})
+    return found
+
+
 @api_router.post("/quizzes/{quiz_id}/attempt")
 async def submit_quiz_attempt(quiz_id: str, attempt_data: AttemptSubmit, current_user: User = Depends(get_current_user)):
     quiz = await db.quizzes.find_one({"id": quiz_id})
@@ -443,12 +458,13 @@ async def submit_quiz_attempt(quiz_id: str, attempt_data: AttemptSubmit, current
 
     answers = [a.dict() for a in attempt_data.answers]
     score = _grade(quiz, answers)
+    misconceptions = _collect_misconceptions(quiz, answers)
     first_attempt = await db.quiz_attempts.find_one({"quiz_id": quiz_id, "user_id": current_user.id}) is None
 
     attempt = {
         "id": str(uuid.uuid4()), "quiz_id": quiz_id, "user_id": current_user.id,
         "quiz_title": quiz["title"], "subject": quiz.get("subject", "General"),
-        "answers": answers, "score": score,
+        "answers": answers, "score": score, "misconceptions": misconceptions,
         "completed_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.quiz_attempts.insert_one(attempt)
@@ -626,76 +642,17 @@ async def add_comment(idea_id: str, comment: CommentCreate, current_user: User =
     return doc
 
 
-# ---------------- Chat & Mentorship ----------------
+# ---------------- Mentorship ----------------
 @api_router.get("/users/search")
-async def search_users(q: str, current_user: User = Depends(get_current_user)):
+async def search_users(q: str, current_user: User = Depends(require_teacher)):
     if not q.strip():
         return []
     regex = {"$regex": re.escape(q.strip()[:50]), "$options": "i"}
     users = await db.users.find({
-        "id": {"$ne": current_user.id},
+        "role": "student",
         "$or": [{"username": regex}, {"full_name": regex}],
     }).to_list(20)
     return [safe_user(u) for u in users]
-
-
-@api_router.post("/chat/send")
-async def send_message(msg: MessageCreate, current_user: User = Depends(get_current_user)):
-    recipient = await db.users.find_one({"id": msg.recipient_id})
-    if not recipient:
-        raise HTTPException(status_code=404, detail="Recipient not found")
-    if not msg.text.strip():
-        raise HTTPException(status_code=400, detail="Message cannot be empty")
-    doc = {
-        "id": str(uuid.uuid4()), "sender_id": current_user.id, "sender_name": current_user.full_name,
-        "recipient_id": msg.recipient_id, "text": msg.text.strip(),
-        "created_at": datetime.now(timezone.utc).isoformat(), "read": False,
-    }
-    await db.messages.insert_one(doc)
-    doc.pop("_id", None)
-    return doc
-
-
-@api_router.get("/chat/conversations")
-async def get_conversations(current_user: User = Depends(get_current_user)):
-    msgs = await db.messages.find({
-        "$or": [{"sender_id": current_user.id}, {"recipient_id": current_user.id}]
-    }, {"_id": 0}).sort("created_at", -1).to_list(1000)
-    partners = {}
-    for m in msgs:
-        pid = m["recipient_id"] if m["sender_id"] == current_user.id else m["sender_id"]
-        if pid not in partners:
-            partners[pid] = {"last_message": m["text"], "last_at": m["created_at"], "unread": 0}
-        if m["recipient_id"] == current_user.id and not m.get("read"):
-            partners[pid]["unread"] += 1
-    if not partners:
-        return []
-    users = await db.users.find({"id": {"$in": list(partners.keys())}}).to_list(100)
-    user_map = {u["id"]: u for u in users}
-    result = []
-    for pid, info in partners.items():
-        if pid in user_map:
-            result.append({**safe_user(user_map[pid]), **info})
-    result.sort(key=lambda x: x["last_at"], reverse=True)
-    return result
-
-
-@api_router.get("/chat/with/{user_id}")
-async def get_messages_with(user_id: str, current_user: User = Depends(get_current_user)):
-    partner = await db.users.find_one({"id": user_id})
-    if not partner:
-        raise HTTPException(status_code=404, detail="User not found")
-    await db.messages.update_many(
-        {"sender_id": user_id, "recipient_id": current_user.id, "read": False},
-        {"$set": {"read": True}},
-    )
-    msgs = await db.messages.find({
-        "$or": [
-            {"sender_id": current_user.id, "recipient_id": user_id},
-            {"sender_id": user_id, "recipient_id": current_user.id},
-        ]
-    }, {"_id": 0}).sort("created_at", 1).to_list(500)
-    return {"partner": safe_user(partner), "messages": msgs}
 
 
 @api_router.post("/teacher/add-student/{student_id}")

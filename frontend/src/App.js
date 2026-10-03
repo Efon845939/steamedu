@@ -13,7 +13,6 @@ import IdeaDetailPage from './components/IdeaDetailPage';
 import ContentHub from './components/ContentHub';
 import NotFoundPage from './components/NotFoundPage';
 import LeaderboardPage from './components/LeaderboardPage';
-import ChatPage from './components/ChatPage';
 import ContestsPage from './components/ContestsPage';
 import Navbar from './components/Navbar';
 import { Toaster } from './components/ui/sonner';
@@ -86,7 +85,6 @@ function App() {
             <Route path="/ideas" element={user ? <IdeasPage /> : <Navigate to="/auth" />} />
             <Route path="/ideas/:id" element={user ? <IdeaDetailPage /> : <Navigate to="/auth" />} />
             <Route path="/leaderboard" element={user ? <LeaderboardPage /> : <Navigate to="/auth" />} />
-            <Route path="/chat" element={user ? <ChatPage /> : <Navigate to="/auth" />} />
             <Route path="/contests" element={user ? <ContestsPage /> : <Navigate to="/auth" />} />
             <Route path="/tournaments" element={<Navigate to="/contests" />} />
             <Route path="/content" element={<ContentHub />} />
