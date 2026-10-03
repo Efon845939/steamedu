@@ -5,9 +5,11 @@ import sys
 import json
 from datetime import datetime
 import uuid
+import os
 
 class STEAMPlatformTester:
-    def __init__(self, base_url="https://interactive-stem-2.preview.emergentagent.com"):
+    def __init__(self, base_url=None):
+        base_url = base_url or os.environ.get("REACT_APP_BACKEND_URL", "http://localhost:8001")
         self.base_url = base_url
         self.api_url = f"{base_url}/api"
         self.token = None

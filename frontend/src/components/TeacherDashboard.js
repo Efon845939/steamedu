@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import axios from 'axios';
 import { toast } from 'sonner';
 import { SUBJECTS, AGE_GROUPS, formatApiError } from '../lib/steam';
-import { BadgeCheck, Trophy, MessageCircle, Users } from 'lucide-react';
+import { BadgeCheck, Trophy, Users, Search, UserPlus } from 'lucide-react';
 import { TeacherAnnouncements } from './TeacherAnnouncements';
 
 const TeacherDashboard = ({ stats, refreshStats }) => {
@@ -24,6 +24,8 @@ const TeacherDashboard = ({ stats, refreshStats }) => {
   const [quizzes, setQuizzes] = useState([]);
   const [challengeOpen, setChallengeOpen] = useState(false);
   const [tournamentOpen, setTournamentOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
   const [newChallenge, setNewChallenge] = useState({ title: '', description: '', type: 'task', quiz_id: '', points: 20 });
   const [newTournament, setNewTournament] = useState({ title: '', description: '', subject: 'Science', age_group: 'all', scope: 'class', quiz_id: '', duration_days: 7 });
 
@@ -47,6 +49,34 @@ const TeacherDashboard = ({ stats, refreshStats }) => {
   useEffect(() => {
     fetchAll();
   }, [fetchAll]);
+
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      return undefined;
+    }
+    const t = setTimeout(async () => {
+      try {
+        const res = await axios.get(`${API}/users/search`, { params: { q: searchQuery } });
+        setSearchResults(res.data);
+      } catch (e) {
+        console.error(e);
+      }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [searchQuery, API]);
+
+  const addStudent = async (student) => {
+    try {
+      const res = await axios.post(`${API}/teacher/add-student/${student.id}`);
+      toast.success(`${res.data.full_name} is now your student!`);
+      setSearchQuery('');
+      fetchAll();
+      refreshStats();
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail));
+    }
+  };
 
   const createChallenge = async (e) => {
     e.preventDefault();
@@ -99,7 +129,6 @@ const TeacherDashboard = ({ stats, refreshStats }) => {
             </p>
           </div>
           <div className="flex gap-3 mt-4 sm:mt-0">
-            <Link to="/chat"><Button variant="outline" className="border-teal-600 text-teal-600" data-testid="teacher-chat-btn"><MessageCircle className="w-4 h-4 mr-2" />Chat with Students</Button></Link>
             <Link to="/leaderboard"><Button variant="outline" className="border-amber-600 text-amber-600" data-testid="teacher-leaderboard-btn"><Trophy className="w-4 h-4 mr-2" />Leaderboards</Button></Link>
           </div>
         </div>
@@ -288,13 +317,40 @@ const TeacherDashboard = ({ stats, refreshStats }) => {
           <Card className="bg-white/70 backdrop-blur-sm" data-testid="students-card">
             <CardHeader>
               <CardTitle className="flex items-center gap-2"><Users className="w-6 h-6 text-emerald-600" />My Students</CardTitle>
-              <CardDescription>Add students by chatting with them and clicking "Add as my student"</CardDescription>
+              <CardDescription>Search a student by name or username and add them to your class</CardDescription>
             </CardHeader>
             <CardContent>
+              <div className="relative mb-4">
+                <Search className="w-4 h-4 absolute left-3 top-3 text-gray-400" />
+                <Input
+                  placeholder="Search students..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9"
+                  data-testid="student-search-input"
+                />
+              </div>
+              {searchResults.length > 0 && (
+                <div className="mb-4 space-y-2" data-testid="student-search-results">
+                  {searchResults.map((p) => (
+                    <div key={p.id} className="flex items-center justify-between p-3 border rounded-lg">
+                      <div>
+                        <h4 className="font-semibold text-sm">{p.full_name} <span className="text-gray-400 font-normal">@{p.username}</span></h4>
+                      </div>
+                      {p.teacher_id === user.id ? (
+                        <Badge className="bg-emerald-100 text-emerald-800">Your student</Badge>
+                      ) : (
+                        <Button size="sm" onClick={() => addStudent(p)} className="bg-emerald-600 hover:bg-emerald-700" data-testid={`add-student-${p.username}`}>
+                          <UserPlus className="w-4 h-4 mr-2" />Add as my student
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
               {students.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
-                  <p className="mb-3">No students yet.</p>
-                  <Link to="/chat"><Button variant="outline" className="border-emerald-600 text-emerald-600" data-testid="find-students-btn">Find students via Chat</Button></Link>
+                  <p className="mb-3">No students yet. Use the search above to add your first one.</p>
                 </div>
               ) : (
                 <div className="space-y-3">

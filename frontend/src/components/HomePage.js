@@ -15,8 +15,8 @@ const HomePage = () => {
               STEAM Learning Platform
             </h1>
             <p className="text-xl md:text-2xl text-gray-700 max-w-3xl mx-auto leading-relaxed">
-              Unlock your creativity through Science, Technology, Engineering, Arts, and Mathematics. 
-              Join thousands of students exploring innovative learning experiences.
+              Learn Science, Technology, Engineering, Arts, and Mathematics through quizzes, 
+              hands-on activities, and shared student ideas, with progress your teacher can follow.
             </p>
           </div>
           
@@ -222,7 +222,7 @@ const HomePage = () => {
                 <span className="text-3xl">💡</span>
               </div>
               <h3 className="text-xl font-semibold text-gray-900 mb-3">Idea Sharing</h3>
-              <p className="text-gray-600">Share your creative projects and learn from fellow students worldwide.</p>
+              <p className="text-gray-600">Share your creative projects and learn from your classmates.</p>
             </div>
 
             <div className="text-center group">
@@ -243,7 +243,7 @@ const HomePage = () => {
             Ready to Start Your STEAM Journey?
           </h2>
           <p className="text-xl mb-8 opacity-90">
-            Join thousands of students already exploring the exciting world of STEAM education.
+            Sign up as a student or teacher and start with your first quiz.
           </p>
           <Link to="/auth">
             <Button 

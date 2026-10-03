@@ -85,7 +85,7 @@ export const TeacherAnnouncements = ({ studentsCount }) => {
                 <DialogDescription>
                   {studentsCount > 0
                     ? `This will be delivered to all ${studentsCount} of your students instantly.`
-                    : 'Add students via Chat first — announcements go to your own students.'}
+                    : 'Add students first — announcements go to your own students.'}
                 </DialogDescription>
               </DialogHeader>
               <form onSubmit={send} className="space-y-4">
