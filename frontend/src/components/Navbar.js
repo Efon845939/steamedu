@@ -2,14 +2,47 @@ import React, { useContext, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { AuthContext } from '../App';
 import { Button } from './ui/button';
-import { BadgeCheck } from 'lucide-react';
+import { BadgeCheck, Feather } from 'lucide-react';
+import { toast } from 'sonner';
 import { firstName } from '../lib/steam';
+import { useLiteMode } from '../hooks/use-lite-mode';
 
 const Navbar = () => {
   const { user, logout } = useContext(AuthContext);
   const location = useLocation();
   const navigate = useNavigate();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const { lite, toggleLite } = useLiteMode();
+
+  const handleToggleLite = () => {
+    const next = !lite;
+    toggleLite();
+    if (next) {
+      toast.success('Lite mode on — images, animations and web fonts are off');
+    } else {
+      toast.info('Lite mode off');
+    }
+  };
+
+  // Rendered via a plain function (not a nested component) so the button keeps
+  // keyboard focus when lite mode re-renders the navbar.
+  const renderLiteToggle = (testId) => (
+    <button
+      type="button"
+      onClick={handleToggleLite}
+      aria-pressed={lite}
+      title="Lite mode: fewer bytes, no animations — for slow connections"
+      className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-sm font-medium transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-1 ${
+        lite
+          ? 'border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700'
+          : 'border-gray-300 bg-white text-gray-700 hover:border-emerald-400 hover:text-emerald-700'
+      }`}
+      data-testid={testId}
+    >
+      <Feather className="w-4 h-4" aria-hidden="true" />
+      <span>{lite ? 'Lite on' : 'Lite'}</span>
+    </button>
+  );
 
   const handleLogout = () => {
     logout();
@@ -42,6 +75,7 @@ const Navbar = () => {
       <NavLink to="/" onClick={() => setIsMenuOpen(false)}>Home</NavLink>
       <NavLink to="/content" onClick={() => setIsMenuOpen(false)}>Content</NavLink>
       {user && <NavLink to="/dashboard" onClick={() => setIsMenuOpen(false)}>Dashboard</NavLink>}
+      {user && <NavLink to="/arena" onClick={() => setIsMenuOpen(false)}>Debug Arena</NavLink>}
       {user && <NavLink to="/ideas" onClick={() => setIsMenuOpen(false)}>Ideas</NavLink>}
       {user && <NavLink to="/contests" onClick={() => setIsMenuOpen(false)}>Contests</NavLink>}
     </>
@@ -60,6 +94,7 @@ const Navbar = () => {
 
           <div className="hidden md:flex items-center space-x-1">
             {links}
+            <div className="pl-3">{renderLiteToggle('lite-mode-toggle')}</div>
             {user ? (
               <div className="flex items-center space-x-3 ml-6 pl-6 border-l border-gray-200">
                 <span className="text-sm text-gray-700 flex items-center gap-1" data-testid="navbar-user-name">
@@ -97,7 +132,8 @@ const Navbar = () => {
             )}
           </div>
 
-          <div className="md:hidden">
+          <div className="md:hidden flex items-center gap-2">
+            {renderLiteToggle('lite-mode-toggle-mobile')}
             <button
               onClick={() => setIsMenuOpen(!isMenuOpen)}
               className="text-gray-700 hover:text-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-500 p-2"

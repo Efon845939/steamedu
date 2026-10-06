@@ -8,7 +8,7 @@ import { Badge } from './ui/badge';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { subjectEmoji, formatApiError, firstName } from '../lib/steam';
-import { Flame, Star, Trophy, Award, CheckCircle2 } from 'lucide-react';
+import { Flame, Star, Trophy, Award, CheckCircle2, Bug, PenLine } from 'lucide-react';
 import { WeeklyRecap } from './WeeklyRecap';
 import { CertificateModal } from './CertificateModal';
 import { BadgesCard } from './BadgesCard';
@@ -140,6 +140,45 @@ const StudentDashboard = ({ stats, refreshStats }) => {
 
         <WeeklyRecap />
 
+        {/* Debug Arena */}
+        <Card className="bg-gradient-to-r from-rose-50 via-orange-50 to-amber-50 border-2 border-rose-100 mb-8" data-testid="arena-card">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2">
+              <Bug className="w-6 h-6 text-rose-600" />
+              <span>Debug Arena</span>
+            </CardTitle>
+            <CardDescription>
+              Find the broken step in a worked solution — or write your own trap for your classmates.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex gap-6">
+              <div>
+                <div className="text-2xl font-bold text-rose-700" data-testid="arena-debug-rating">{stats.debug_rating}</div>
+                <p className="text-xs text-gray-600">Debugger rating</p>
+              </div>
+              <div>
+                <div className="text-2xl font-bold text-rose-700" data-testid="arena-bugs-found">
+                  {stats.bugs_found}<span className="text-base text-gray-400">/{stats.arena_attempted}</span>
+                </div>
+                <p className="text-xs text-gray-600">Bugs found on first try</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <Link to="/arena">
+                <Button className="bg-rose-600 hover:bg-rose-700" data-testid="arena-play-btn">
+                  <Bug className="w-4 h-4 mr-2" />Hunt bugs
+                </Button>
+              </Link>
+              <Link to="/arena?tab=mine">
+                <Button variant="outline" className="border-rose-600 text-rose-600 hover:bg-rose-50" data-testid="arena-write-btn">
+                  <PenLine className="w-4 h-4 mr-2" />Write a scenario
+                </Button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+
         <BadgesCard reloadKey={badgeKey} />
 
         <div className="grid lg:grid-cols-2 gap-8 mb-8">
@@ -203,8 +242,9 @@ const StudentDashboard = ({ stats, refreshStats }) => {
               </CardTitle>
               <CardDescription>Jump into your learning activities</CardDescription>
             </CardHeader>
-            <CardContent className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+            <CardContent className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
               <Link to="/quiz"><Button className="w-full justify-start bg-emerald-600 hover:bg-emerald-700" data-testid="take-quiz-btn">📝 Quizzes</Button></Link>
+              <Link to="/arena"><Button variant="outline" className="w-full justify-start border-rose-600 text-rose-600 hover:bg-rose-50" data-testid="arena-btn"><Bug className="w-4 h-4 mr-2" />Debug Arena</Button></Link>
               <Link to="/activities"><Button variant="outline" className="w-full justify-start border-purple-600 text-purple-600 hover:bg-purple-50" data-testid="explore-activities-btn">🎯 Activities</Button></Link>
               <Link to="/contests"><Button variant="outline" className="w-full justify-start border-amber-600 text-amber-600 hover:bg-amber-50" data-testid="contests-btn"><Trophy className="w-4 h-4 mr-2" />Contests</Button></Link>
               <Link to="/leaderboard"><Button variant="outline" className="w-full justify-start border-blue-600 text-blue-600 hover:bg-blue-50" data-testid="leaderboard-btn">🏆 Leaderboard</Button></Link>

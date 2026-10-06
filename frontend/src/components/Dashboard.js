@@ -1,15 +1,18 @@
-import React, { useContext, useState, useEffect } from 'react';
+import React, { useContext, useState, useEffect, useCallback, Suspense, lazy } from 'react';
 import { AuthContext } from '../App';
-import StudentDashboard from './StudentDashboard';
-import TeacherDashboard from './TeacherDashboard';
 import axios from 'axios';
+import { PageFallback } from './ChunkErrorBoundary';
+
+// Students never download the teacher dashboard and vice versa
+const StudentDashboard = lazy(() => import('./StudentDashboard'));
+const TeacherDashboard = lazy(() => import('./TeacherDashboard'));
 
 const Dashboard = () => {
   const { user, API } = useContext(AuthContext);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     try {
       const response = await axios.get(`${API}/stats/me`);
       setStats(response.data);
@@ -18,11 +21,11 @@ const Dashboard = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [API]);
 
   useEffect(() => {
     fetchStats();
-  }, []);
+  }, [fetchStats]);
 
   if (loading || !stats) {
     return (
@@ -35,9 +38,13 @@ const Dashboard = () => {
     );
   }
 
-  return user.role === 'teacher'
-    ? <TeacherDashboard stats={stats} refreshStats={fetchStats} />
-    : <StudentDashboard stats={stats} refreshStats={fetchStats} />;
+  return (
+    <Suspense fallback={<PageFallback />}>
+      {user.role === 'teacher'
+        ? <TeacherDashboard stats={stats} refreshStats={fetchStats} />
+        : <StudentDashboard stats={stats} refreshStats={fetchStats} />}
+    </Suspense>
+  );
 };
 
 export default Dashboard;

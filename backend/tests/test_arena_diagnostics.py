@@ -56,6 +56,12 @@ def client():
         yield c
 
 
+@pytest.fixture(autouse=True)
+def _no_registration_rate_limit():
+    # Every TestClient request comes from one IP, so the in-memory registration limit would trip
+    server._rate_buckets.clear()
+
+
 @pytest.fixture(scope="module")
 def teacher(client):
     headers = _new_teacher(client, "teacher_arena")
@@ -65,7 +71,8 @@ def teacher(client):
 
 @pytest.fixture(scope="module")
 def arena(client, teacher):
-    return {c["title"]: c for c in client.get("/api/arena/challenges", headers=teacher).json()}
+    rows = client.get("/api/arena/challenges", params={"source": "system"}, headers=teacher).json()
+    return {c["title"]: c for c in rows}
 
 
 @pytest.fixture(scope="module")
@@ -83,15 +90,28 @@ def _attempt(client, headers, challenge_id, **body):
     return r.json()
 
 
-def _quiz_answers(tag=None):
-    """All-correct answers for the diagnostic quiz, except options tagged `tag`."""
+def _quiz_answers(*tags):
+    """All-correct answers for the diagnostic quiz, except options tagged with one of `tags`."""
     seed = next(q for q in QUIZZES if q["title"] == DIAGNOSTIC_TITLE)["questions"]
     answers = []
     for i, q in enumerate(seed):
-        tagged = [opt for opt, t in q.get("misconceptions", {}).items() if t == tag]
+        tagged = [opt for opt, t in q.get("misconceptions", {}).items() if t in tags]
         answers.append({"question_index": i, "selected": tagged[0] if tagged else q["correct_answer"]})
     hits = sum(1 for a, q in zip(answers, seed) if a["selected"] != q["correct_answer"])
     return answers, hits
+
+
+def _quiz_tags():
+    seed = next(q for q in QUIZZES if q["title"] == DIAGNOSTIC_TITLE)["questions"]
+    return {t for q in seed for t in q.get("misconceptions", {}).values()}
+
+
+def _student_id(client, headers):
+    return client.get("/api/auth/me", headers=headers).json()["id"]
+
+
+def _concepts(diagnostics):
+    return {row["tag"]: row for row in diagnostics["concepts"]}
 
 
 def _diagnostics(client, teacher):
@@ -120,10 +140,17 @@ def test_seed_arena_challenges_are_valid():
 def test_arena_requires_login_and_hides_answers(client, teacher, arena):
     assert client.get("/api/arena/challenges").status_code in (401, 403)
     assert len(arena) == len(ARENA_CHALLENGES)
-    for c in arena.values():
+    student = _new_student(client, teacher, "arena_viewer")
+    rows = client.get("/api/arena/challenges", params={"source": "system"}, headers=student).json()
+    assert len(rows) == len(ARENA_CHALLENGES)
+    for c in rows:
         assert not HIDDEN & c.keys(), c["title"]
-        single = client.get(f"/api/arena/challenges/{c['id']}", headers=teacher).json()
+        single = client.get(f"/api/arena/challenges/{c['id']}", headers=student).json()
         assert not HIDDEN & single.keys(), c["title"]
+    # Teachers also see which misconception a challenge targets (to aim worksheets), never the answer key
+    for c in arena.values():
+        assert HIDDEN & c.keys() == {"misconception"}, c["title"]
+        assert c["misconception"]["tag"] == _seed_challenge(c["title"])["misconception"]
 
 
 def test_wrong_step_logs_misconception_and_reveals_answer(client, teacher, arena):
@@ -207,6 +234,16 @@ def test_diagnostics_counts_latest_attempts_of_own_students(client, teacher, are
     assert rows[tag]["student_names"] == ["Diag_B"]
     assert diag["students_assessed"] == 2
 
+    # Heatmap: A was tested on the concept and is now clear; B still holds it
+    a_id, b_id = _student_id(client, student_a), _student_id(client, student_b)
+    concept = _concepts(diag)[tag]
+    assert concept["tested_count"] == 2 and concept["holding_count"] == 1 and concept["rate"] == 0.5
+    assert a_id in concept["tested_ids"] and a_id not in concept["holding_ids"]
+    assert concept["holding_ids"] == [b_id]
+    assert _quiz_tags() <= set(_concepts(diag))  # every tag the quiz can reveal shows up, even with nobody holding it
+    assert {r["id"] for r in diag["roster"]} == {a_id, b_id} and diag["students_tested"] == 2
+    assert diag["alerts"] == []  # two students is too small a sample for an alert
+
     assert client.get("/api/teacher/diagnostics", headers=student_a).status_code == 403
 
 
@@ -233,3 +270,48 @@ def test_contest_entries_feed_diagnostics_but_stay_private(client, teacher, diag
     assert ranking and all("misconceptions" not in e for e in ranking)
     mine = next(t for t in client.get("/api/tournaments", headers=student).json() if t["id"] == contest_id)
     assert "misconceptions" not in mine["my_entry"]
+
+
+def test_blank_arena_attempt_tests_nothing(client, teacher, arena):
+    me = _new_teacher(client, "teacher_blank")
+    student = _new_student(client, me, "blank_kid")
+    lever = _seed_challenge("Does a Lever Save Work?")
+    _attempt(client, student, arena[lever["title"]]["id"], seconds_used=120)  # timer ran out, nothing picked
+    diag = _diagnostics(client, me)
+    assert lever["misconception"] not in _concepts(diag)
+    assert diag["students_tested"] == 0 and diag["roster"][0]["tested_count"] == 0
+
+
+def test_contest_marks_every_quiz_concept_as_tested(client, teacher, diagnostic_quiz):
+    me = _new_teacher(client, "teacher_contest_heat")
+    student = _new_student(client, me, "contest_heat_kid")
+    contest = client.post("/api/tournaments", headers=me, json={
+        "title": "Heat Cup", "subject": "Science", "age_group": "all", "scope": "class",
+        "quiz_id": diagnostic_quiz["id"], "duration_days": 3}).json()
+    assert client.post(f"/api/tournaments/{contest['id']}/join", headers=student).status_code == 200
+    answers, _ = _quiz_answers()
+    assert client.post(f"/api/tournaments/{contest['id']}/submit", json={"answers": answers}, headers=student).status_code == 200
+    concepts = _concepts(_diagnostics(client, me))
+    assert set(concepts) == _quiz_tags()
+    assert all(r["tested_count"] == 1 and r["holding_count"] == 0 for r in concepts.values())
+
+
+def test_alerts_need_a_real_sample(client, teacher, diagnostic_quiz):
+    me = _new_teacher(client, "teacher_alerts")
+    kids = [_new_student(client, me, f"alert_kid_{i}") for i in range(5)]
+    quiz_url = f"/api/quizzes/{diagnostic_quiz['id']}/attempt"
+    for i, kid in enumerate(kids):
+        # Everyone holds motion-implies-force; only two hold heavier-falls-faster
+        tags = ("motion-implies-force", "heavier-falls-faster") if i < 2 else ("motion-implies-force",)
+        answers, _ = _quiz_answers(*tags)
+        assert client.post(quiz_url, json={"answers": answers}, headers=kid).status_code == 200
+
+    diag = _diagnostics(client, me)
+    alerts = {a["tag"]: a for a in diag["alerts"]}
+    assert alerts["motion-implies-force"]["level"] == "red"
+    assert alerts["motion-implies-force"]["tested_count"] == 5 and alerts["motion-implies-force"]["rate"] == 1.0
+    # 2 of 5 is 40%, but fewer than 3 students hold it, so it's only worth watching
+    assert alerts["heavier-falls-faster"]["level"] == "watch" and alerts["heavier-falls-faster"]["holding_count"] == 2
+    assert set(alerts) == {"motion-implies-force", "heavier-falls-faster"}
+    assert diag["alert_rule"]["min_tested"] == server.DIAG_ALERT_MIN_TESTED
+    assert diag["concepts"][0]["tag"] == "motion-implies-force"  # highest rate first

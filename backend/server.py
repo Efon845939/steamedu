@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
+import random
 import re
 import time
 import logging
@@ -263,6 +264,10 @@ BADGE_DEFS = [
      "icon": "BadgeCheck", "metric": "spotlights", "goal": 1, "color": "sky"},
     {"key": "contest_champion", "name": "Contest Champion", "description": "Win a contest and earn a certificate",
      "icon": "Trophy", "metric": "certificates", "goal": 1, "color": "amber"},
+    {"key": "first_trap", "name": "Trap Setter", "description": "Get your first Debug Arena scenario approved",
+     "icon": "Bug", "metric": "peer_approved", "goal": 1, "color": "rose"},
+    {"key": "bug_hunter", "name": "Bug Hunter", "description": "Find the flawed step in 10 different scenarios on your first try",
+     "icon": "Search", "metric": "bugs_found", "goal": 10, "color": "teal"},
 ]
 
 
@@ -272,6 +277,9 @@ async def _badge_metrics(user_id: str) -> dict:
     results = await db.activity_results.find({"user_id": user_id}, {"_id": 0, "activity_id": 1}).to_list(2000)
     ideas = await db.ideas.find({"author_id": user_id}, {"_id": 0, "spotlight": 1}).to_list(500)
     certificates = await db.certificates.count_documents({"student_id": user_id})
+    peer_approved = await db.arena_challenges.count_documents(
+        {"author_id": user_id, "source": "peer", "approved_at": {"$ne": None}})
+    arena = await _arena_progress(user_id)
     return {
         "quizzes": len({a["quiz_id"] for a in attempts}),
         "best_score": max([a["score"] for a in attempts], default=0),
@@ -281,6 +289,8 @@ async def _badge_metrics(user_id: str) -> dict:
         "ideas": len(ideas),
         "spotlights": len([i for i in ideas if i.get("spotlight")]),
         "certificates": certificates,
+        "peer_approved": peer_approved,
+        "bugs_found": arena["bugs_found"],
     }
 
 
@@ -499,19 +509,108 @@ async def submit_quiz_attempt(quiz_id: str, attempt_data: AttemptSubmit, current
 
 
 # ---------------- Debug Arena ----------------
-# The flawed step, its explanation and misconception stay on the server until the student submits.
-_ARENA_HIDDEN_FIELDS = {"flawed_step", "correct_explanation", "misconception", "debrief"}
+# Challenges come from the seed ("system") or from students ("peer"). Peer scenarios go live only after
+# the author's teacher approves them. Answers stay on the server until the student submits an attempt.
 ARENA_STEP_POINTS = 50
 ARENA_EXPLANATION_POINTS = 50
+PEER_SOLVE_FACTOR = 0.5            # solving a classmate's scenario pays half, so friends can't farm easy ones
+AUTHOR_APPROVAL_POINTS = 30
+AUTHOR_SOLVER_POINTS = 5
+AUTHOR_SOLVER_CAP = 20             # author is paid for at most this many distinct solvers
+CALIBRATION_MIN_SOLVERS = 5
+CALIBRATION_BAND = (0.20, 0.80)    # "tough but fair": find-rate inside this band earns the bonus
+CALIBRATION_BONUS = 50
+PEER_MAX_PENDING = 3
+PEER_DAILY_LIMIT = 5
+FLAG_DAILY_LIMIT = 20
+FLAG_HIDE_THRESHOLD = 3
+FLAG_REASONS = {"wrong_answer", "confusing", "inappropriate", "duplicate", "other"}
+RATING_START = 1000
+RATING_K_USER = 32
+RATING_K_CHALLENGE = 16
+WORKSHEET_MAX_ITEMS = 10
+
+# Whitelist: anything else on a challenge (answers, author ids, review notes, stats) never reaches solvers.
+_PUBLIC_ARENA_FIELDS = ("id", "title", "subject", "age_groups", "time_limit_seconds", "problem", "steps",
+                        "explanations", "source", "author_name", "created_at", "difficulty_rating")
+_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 
 
-def _strip_arena_answers(challenge: dict) -> dict:
-    return {k: v for k, v in challenge.items() if k not in _ARENA_HIDDEN_FIELDS}
+def _shuffled(items: list, seed: str) -> list:
+    out = list(items)
+    random.Random(seed).shuffle(out)
+    return out
+
+
+def _is_peer(challenge: dict) -> bool:
+    return challenge.get("source") == "peer"
+
+
+def _public_challenge(challenge: dict, viewer_id: str) -> dict:
+    """Solver view. Explanation order is stable per viewer, so classmates can't pass round "it's B"."""
+    out = {k: challenge.get(k) for k in _PUBLIC_ARENA_FIELDS}
+    out["source"] = "peer" if _is_peer(challenge) else "system"
+    out["author_name"] = challenge.get("author_name") if _is_peer(challenge) else None
+    out["created_at"] = str(challenge.get("created_at") or "")  # seeds store a datetime
+    out["difficulty_rating"] = challenge.get("difficulty_rating", RATING_START)
+    out["explanations"] = _shuffled(challenge.get("explanations", []), f"{challenge['id']}:{viewer_id}")
+    return out
+
+
+def _author_view(challenge: dict) -> dict:
+    stats = challenge.get("stats") or {}
+    solvers = stats.get("solvers", 0)
+    return {**{k: v for k, v in challenge.items() if k != "_id"},
+            "find_rate": round(stats.get("finders", 0) / solvers, 2) if solvers else None}
 
 
 def _misconception_info(tag: str) -> dict:
     entry = MISCONCEPTIONS.get(tag, {})
     return {"tag": tag, "subject": entry.get("subject"), "description": entry.get("description", tag)}
+
+
+def _arena_visibility(user: User) -> dict:
+    """Mongo filter for the challenges a user may see: system ones plus approved peer ones in reach."""
+    approved_peer = {"source": "peer", "status": "approved"}
+    reachable = [{"source": {"$ne": "peer"}},
+                 {**approved_peer, "visibility": "public"},
+                 {**approved_peer, "author_id": user.id}]
+    class_id = user.id if user.role == "teacher" else user.teacher_id
+    if class_id:
+        reachable.append({**approved_peer, "visibility": "class", "class_teacher_id": class_id})
+    return {"$or": reachable}
+
+
+async def _load_visible_challenge(user: User, challenge_id: str) -> dict:
+    # 404 rather than 403, so a pending scenario's id doesn't confirm it exists
+    challenge = await db.arena_challenges.find_one({"id": challenge_id, **_arena_visibility(user)}, {"_id": 0})
+    if not challenge:
+        raise HTTPException(status_code=404, detail="Challenge not found")
+    return challenge
+
+
+def _first_attempts(attempts: list) -> dict:
+    """Earliest attempt per challenge. Retrying after the answer was revealed never counts as a find."""
+    first = {}
+    for a in sorted(attempts, key=lambda a: str(a.get("completed_at") or "")):
+        first.setdefault(a["challenge_id"], a)
+    return first
+
+
+async def _arena_progress(user_id: str) -> dict:
+    user = await db.users.find_one({"id": user_id}, {"_id": 0, "debug_rating": 1})
+    attempts = await db.arena_attempts.find(
+        {"user_id": user_id}, {"_id": 0, "challenge_id": 1, "step_correct": 1, "completed_at": 1}).to_list(5000)
+    first = _first_attempts(attempts)
+    return {"debug_rating": (user or {}).get("debug_rating", RATING_START),
+            "bugs_found": sum(1 for a in first.values() if a.get("step_correct")),
+            "arena_attempted": len(first)}
+
+
+@api_router.get("/misconceptions")
+async def list_misconceptions(subject: Optional[str] = None, current_user: User = Depends(get_current_user)):
+    return [{"tag": tag, **entry} for tag, entry in MISCONCEPTIONS.items()
+            if not subject or entry["subject"] == subject]
 
 
 class ArenaAttemptSubmit(BaseModel):
@@ -523,34 +622,89 @@ class ArenaAttemptSubmit(BaseModel):
 
 @api_router.get("/arena/challenges")
 async def get_arena_challenges(subject: Optional[str] = None, age_group: Optional[str] = None,
-                               current_user: User = Depends(get_current_user)):
-    query = age_group_query(age_group)
+                               source: str = "all", current_user: User = Depends(get_current_user)):
+    query = {**age_group_query(age_group), **_arena_visibility(current_user)}
     if subject:
         query["subject"] = subject
-    challenges = await db.arena_challenges.find(query, {"_id": 0}).to_list(200)
+    if source == "system":
+        query["source"] = {"$ne": "peer"}
+    elif source == "peer":
+        query["source"] = "peer"
+    challenges = await db.arena_challenges.find(query, {"_id": 0}).to_list(500)
     attempts = await db.arena_attempts.find(
-        {"user_id": current_user.id}, {"_id": 0, "challenge_id": 1, "score": 1}).to_list(2000)
+        {"user_id": current_user.id}, {"_id": 0, "challenge_id": 1, "score": 1}).to_list(5000)
     best = {}
     for a in attempts:
         best[a["challenge_id"]] = max(best.get(a["challenge_id"], 0), a["score"])
-    return [{**_strip_arena_answers(c), "attempted": c["id"] in best, "best_score": best.get(c["id"])}
-            for c in challenges]
+
+    system = [c for c in challenges if not _is_peer(c)]
+    peer = sorted((c for c in challenges if _is_peer(c)), key=lambda c: str(c.get("created_at")), reverse=True)[:100]
+    rows = []
+    for c in system + peer:
+        mine = c.get("author_id") == current_user.id
+        row = {**_public_challenge(c, current_user.id),
+               "attempted": c["id"] in best, "best_score": best.get(c["id"]),
+               "solvers": (c.get("stats") or {}).get("solvers", 0) if _is_peer(c) else None,
+               "is_mine": mine,
+               "can_attempt": not mine and (not _is_peer(c) or current_user.role == "student")}
+        if current_user.role == "teacher":  # lets teachers build a worksheet aimed at one misconception
+            row["misconception"] = _misconception_info(c["misconception"])
+        rows.append(row)
+    return rows
 
 
 @api_router.get("/arena/challenges/{challenge_id}")
 async def get_arena_challenge(challenge_id: str, current_user: User = Depends(get_current_user)):
+    return _public_challenge(await _load_visible_challenge(current_user, challenge_id), current_user.id)
+
+
+async def _update_ratings(user_id: str, challenge: dict, score: int) -> dict:
+    """Elo-style debugger rating: beating a hard challenge moves you up more than an easy one."""
+    user = await db.users.find_one({"id": user_id}, {"_id": 0, "debug_rating": 1})
+    rating = (user or {}).get("debug_rating", RATING_START)
+    difficulty = challenge.get("difficulty_rating", RATING_START)
+    expected = 1 / (1 + 10 ** ((difficulty - rating) / 400))
+    surprise = score / 100 - expected
+    delta = round(RATING_K_USER * surprise)
+    await db.users.update_one({"id": user_id}, {"$set": {"debug_rating": rating + delta}})
+    await db.arena_challenges.update_one(
+        {"id": challenge["id"]}, {"$set": {"difficulty_rating": difficulty - round(RATING_K_CHALLENGE * surprise)}})
+    return {"before": rating, "after": rating + delta, "delta": delta}
+
+
+async def _reward_author(challenge_id: str, found: bool):
+    """Pay the author per solver, plus a one-off bonus when the find-rate shows a tough but fair scenario.
+    Scenarios almost nobody solves earn nothing extra and get flagged for the teacher instead."""
+    await db.arena_challenges.update_one(
+        {"id": challenge_id}, {"$inc": {"stats.solvers": 1, "stats.finders": 1 if found else 0}})
     challenge = await db.arena_challenges.find_one({"id": challenge_id}, {"_id": 0})
-    if not challenge:
-        raise HTTPException(status_code=404, detail="Challenge not found")
-    return _strip_arena_answers(challenge)
+    stats = challenge.get("stats") or {}
+    solvers, finders = stats.get("solvers", 0), stats.get("finders", 0)
+    earned = AUTHOR_SOLVER_POINTS if solvers <= AUTHOR_SOLVER_CAP else 0
+    if solvers >= CALIBRATION_MIN_SOLVERS:
+        low, high = CALIBRATION_BAND
+        rate = finders / solvers
+        if low <= rate <= high:
+            res = await db.arena_challenges.update_one(
+                {"id": challenge_id, "calibrated": {"$ne": True}},
+                {"$set": {"calibrated": True, "calibrated_at": datetime.now(timezone.utc).isoformat()}})
+            if res.modified_count:
+                earned += CALIBRATION_BONUS
+        await db.arena_challenges.update_one({"id": challenge_id}, {"$set": {"needs_review": rate < low}})
+    if earned:
+        await db.arena_challenges.update_one({"id": challenge_id}, {"$inc": {"stats.author_points": earned}})
+        await award_points(challenge["author_id"], earned, "arena_author")
 
 
 @api_router.post("/arena/challenges/{challenge_id}/attempt")
 async def submit_arena_attempt(challenge_id: str, data: ArenaAttemptSubmit,
                                current_user: User = Depends(get_current_user)):
-    challenge = await db.arena_challenges.find_one({"id": challenge_id}, {"_id": 0})
-    if not challenge:
-        raise HTTPException(status_code=404, detail="Challenge not found")
+    challenge = await _load_visible_challenge(current_user, challenge_id)
+    peer = _is_peer(challenge)
+    if peer and challenge.get("author_id") == current_user.id:
+        raise HTTPException(status_code=403, detail="You can't solve your own scenario")
+    if peer and current_user.role != "student":
+        raise HTTPException(status_code=403, detail="Only students can solve classmates' scenarios")
     step = data.selected_step
     if step is not None and not 0 <= step < len(challenge["steps"]):
         raise HTTPException(status_code=400, detail="Selected step is out of range")
@@ -562,24 +716,40 @@ async def submit_arena_attempt(challenge_id: str, data: ArenaAttemptSubmit,
     # No pick at all (e.g. the timer ran out) is no evidence either way.
     misconceptions = []
     if step is not None and not step_correct:
-        misconceptions.append({"tag": challenge["misconception"], "selected_step": step, "source": "arena"})
+        misconceptions.append({"tag": challenge["misconception"], "selected_step": step,
+                               "source": "peer" if peer else "arena"})
     first_attempt = await db.arena_attempts.find_one(
         {"challenge_id": challenge_id, "user_id": current_user.id}) is None
+    is_student = current_user.role == "student"
+    # Public scenarios only pay authors for solvers who belong to a class, which blocks self-made alt accounts
+    eligible = (peer and first_attempt and is_student
+                and (challenge.get("visibility") != "public" or bool(current_user.teacher_id)))
+    rating = await _update_ratings(current_user.id, challenge, score) if first_attempt and is_student else None
 
     attempt = {
         "id": str(uuid.uuid4()), "challenge_id": challenge_id, "user_id": current_user.id,
         "challenge_title": challenge["title"], "subject": challenge.get("subject", "General"),
+        "challenge_source": "peer" if peer else "system",
         "selected_step": step, "selected_explanation": data.selected_explanation,
         "step_correct": step_correct, "explanation_correct": explanation_correct,
         "score": score, "misconceptions": misconceptions,
+        "first_attempt": first_attempt, "eligible": eligible,
+        "rating_delta": rating["delta"] if rating else None,
         # The timer is for pacing only; time never affects the score, so a client-reported value is safe to keep.
         "seconds_used": None if data.seconds_used is None else min(max(data.seconds_used, 0), 3600),
         "completed_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.arena_attempts.insert_one(attempt)
 
-    points_earned = score if first_attempt else 0
-    await award_points(current_user.id, points_earned, "arena")
+    points_earned = (round(score * PEER_SOLVE_FACTOR) if peer else score) if first_attempt else 0
+    await award_points(current_user.id, points_earned, "arena_peer" if peer else "arena")
+    community = None
+    if peer:
+        if eligible:
+            await _reward_author(challenge_id, step_correct)
+        stats = (await db.arena_challenges.find_one({"id": challenge_id}, {"_id": 0, "stats": 1}) or {}).get("stats") or {}
+        solvers = stats.get("solvers", 0)
+        community = {"solvers": solvers, "find_rate": round(stats.get("finders", 0) / solvers, 2) if solvers else None}
     streak = await touch_streak(current_user.id)
     attempt.pop("_id", None)
     new_badges = await evaluate_badges(current_user.id)
@@ -587,8 +757,350 @@ async def submit_arena_attempt(challenge_id: str, data: ArenaAttemptSubmit,
             "correct_explanation": challenge["correct_explanation"],
             "misconception": _misconception_info(challenge["misconception"]),
             "debrief": challenge["debrief"],
+            "source": "peer" if peer else "system", "author_name": challenge.get("author_name") if peer else None,
+            "rating": rating, "community": community,
             "points_earned": points_earned, "streak_days": streak,
             "first_attempt": first_attempt, "new_badges": new_badges}
+
+
+# ---------------- Debug Arena: student-written scenarios ----------------
+class PeerChallengeIn(BaseModel):
+    model_config = ConfigDict(extra="ignore")  # status, author_id, source... in the body are ignored
+    title: str = ""
+    subject: str = ""
+    problem: str = ""
+    steps: List[str] = []
+    explanations: List[str] = []
+    flawed_step: Optional[int] = None
+    correct_explanation: str = ""
+    misconception: str = ""
+    debrief: str = ""
+    time_limit_seconds: int = 90
+
+
+def _clean_text(value: str) -> str:
+    # React escapes output, so no HTML filter: "a<b" must survive. Only control characters go.
+    return _CONTROL_CHARS.sub("", value or "").strip()
+
+
+def _validate_peer(data: PeerChallengeIn) -> dict:
+    def fail(message):
+        raise HTTPException(status_code=400, detail=message)
+
+    title, problem, debrief = _clean_text(data.title), _clean_text(data.problem), _clean_text(data.debrief)
+    steps = [_clean_text(s) for s in data.steps]
+    explanations = [_clean_text(e) for e in data.explanations]
+    correct = _clean_text(data.correct_explanation)
+    if not 5 <= len(title) <= 80:
+        fail("Title must be 5-80 characters")
+    if data.subject not in SUBJECTS:
+        fail("Pick a STEAM subject")
+    if not 20 <= len(problem) <= 800:
+        fail("Problem must be 20-800 characters")
+    if not 3 <= len(steps) <= 8:
+        fail("Write 3-8 solution steps")
+    if any(not 5 <= len(s) <= 300 for s in steps):
+        fail("Each step must be 5-300 characters")
+    if len({s.lower() for s in steps}) != len(steps):
+        fail("Two steps are identical")
+    if not 2 <= len(explanations) <= 4:
+        fail("Write 2-4 explanation options")
+    if any(not 5 <= len(e) <= 300 for e in explanations):
+        fail("Each explanation must be 5-300 characters")
+    if len({e.lower() for e in explanations}) != len(explanations):
+        fail("Explanation options must all be different")  # grading compares the text
+    if data.flawed_step is None or not 0 <= data.flawed_step < len(steps):
+        fail("Mark which step contains the mistake")
+    if correct not in explanations:
+        fail("Mark which explanation is correct")
+    tag = MISCONCEPTIONS.get(data.misconception)
+    if not tag:
+        fail("Pick a misconception from the list")
+    if tag["subject"] != data.subject:
+        fail("That misconception belongs to a different subject")
+    if not 20 <= len(debrief) <= 1000:
+        fail("Debrief must be 20-1000 characters")
+    return {"title": title, "subject": data.subject, "problem": problem, "steps": steps,
+            "explanations": explanations, "flawed_step": data.flawed_step, "correct_explanation": correct,
+            "misconception": data.misconception, "debrief": debrief,
+            "time_limit_seconds": min(max(data.time_limit_seconds, 30), 300)}
+
+
+async def _peer_limits(user_id: str) -> dict:
+    since = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+    return {"pending": await db.arena_challenges.count_documents({"author_id": user_id, "status": "pending"}),
+            "max_pending": PEER_MAX_PENDING,
+            "today": await db.arena_challenges.count_documents(
+                {"author_id": user_id, "source": "peer", "created_at": {"$gte": since}}),
+            "daily_limit": PEER_DAILY_LIMIT}
+
+
+async def _find_own_scenario(user: User, challenge_id: str) -> dict:
+    doc = await db.arena_challenges.find_one(
+        {"id": challenge_id, "source": "peer", "author_id": user.id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Scenario not found")
+    return doc
+
+
+@api_router.post("/arena/peer")
+async def create_peer_challenge(data: PeerChallengeIn, current_user: User = Depends(get_current_user)):
+    if current_user.role != "student":
+        raise HTTPException(status_code=403, detail="Only students can write Debug Arena scenarios")
+    if not current_user.teacher_id:
+        raise HTTPException(status_code=400, detail="Ask your teacher to add you to their class first — "
+                                                    "they review scenarios before classmates see them")
+    fields = _validate_peer(data)
+    limits = await _peer_limits(current_user.id)
+    if limits["pending"] >= PEER_MAX_PENDING:
+        raise HTTPException(status_code=429, detail=f"You already have {PEER_MAX_PENDING} scenarios waiting for review")
+    if limits["today"] >= PEER_DAILY_LIMIT:
+        raise HTTPException(status_code=429, detail=f"You can submit {PEER_DAILY_LIMIT} scenarios a day — try again tomorrow")
+    now = datetime.now(timezone.utc).isoformat()
+    doc = {
+        "id": str(uuid.uuid4()), "source": "peer", "created_by": current_user.id, **fields, "age_groups": ["all"],
+        "author_id": current_user.id, "author_name": current_user.full_name,
+        "class_teacher_id": current_user.teacher_id, "visibility": "class",
+        "status": "pending", "review_reason": "new", "review": None, "approved_at": None,
+        "needs_review": False, "flag_count": 0, "calibrated": False, "approval_rewarded": False, "revisions": 0,
+        "stats": {"solvers": 0, "finders": 0, "author_points": 0},
+        "difficulty_rating": RATING_START, "created_at": now, "updated_at": now,
+    }
+    await db.arena_challenges.insert_one(doc)
+    return _author_view(doc)
+
+
+@api_router.get("/arena/peer/mine")
+async def get_my_peer_challenges(current_user: User = Depends(get_current_user)):
+    docs = await db.arena_challenges.find(
+        {"source": "peer", "author_id": current_user.id}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return {"scenarios": [_author_view(d) for d in docs], "limits": await _peer_limits(current_user.id)}
+
+
+@api_router.put("/arena/peer/{challenge_id}")
+async def update_peer_challenge(challenge_id: str, data: PeerChallengeIn,
+                                current_user: User = Depends(get_current_user)):
+    doc = await _find_own_scenario(current_user, challenge_id)
+    if doc["status"] not in ("pending", "rejected"):
+        raise HTTPException(status_code=409, detail="Only scenarios waiting for review or sent back can be edited")
+    fields = _validate_peer(data)
+    if doc["status"] == "rejected" and (await _peer_limits(current_user.id))["pending"] >= PEER_MAX_PENDING:
+        raise HTTPException(status_code=429, detail=f"You already have {PEER_MAX_PENDING} scenarios waiting for review")
+    await db.arena_challenges.update_one({"id": challenge_id}, {
+        "$set": {**fields, "status": "pending", "review_reason": "edited",
+                 "updated_at": datetime.now(timezone.utc).isoformat()},
+        "$inc": {"revisions": 1}})
+    return _author_view(await db.arena_challenges.find_one({"id": challenge_id}, {"_id": 0}))
+
+
+@api_router.delete("/arena/peer/{challenge_id}")
+async def withdraw_peer_challenge(challenge_id: str, current_user: User = Depends(get_current_user)):
+    await _find_own_scenario(current_user, challenge_id)
+    if await db.arena_attempts.find_one({"challenge_id": challenge_id}):
+        # Classmates' attempts still feed the teacher's diagnostics, so keep the scenario but take it down
+        await db.arena_challenges.update_one({"id": challenge_id}, {
+            "$set": {"status": "withdrawn", "updated_at": datetime.now(timezone.utc).isoformat()}})
+        return {"deleted": False, "status": "withdrawn"}
+    await db.arena_challenges.delete_one({"id": challenge_id})
+    await db.arena_flags.delete_many({"challenge_id": challenge_id})
+    return {"deleted": True, "status": "deleted"}
+
+
+class FlagIn(BaseModel):
+    reason: str
+    note: str = ""
+
+
+@api_router.post("/arena/challenges/{challenge_id}/flag")
+async def flag_arena_challenge(challenge_id: str, data: FlagIn, current_user: User = Depends(get_current_user)):
+    if current_user.role != "student":
+        raise HTTPException(status_code=403, detail="Only students can report scenarios")
+    challenge = await _load_visible_challenge(current_user, challenge_id)
+    if not _is_peer(challenge):
+        raise HTTPException(status_code=400, detail="Only classmates' scenarios can be reported")
+    if challenge.get("author_id") == current_user.id:
+        raise HTTPException(status_code=403, detail="You can't report your own scenario")
+    if data.reason not in FLAG_REASONS:
+        raise HTTPException(status_code=400, detail="Pick a reason")
+    note = _clean_text(data.note)
+    if len(note) > 300:
+        raise HTTPException(status_code=400, detail="Keep the note under 300 characters")
+    if data.reason != "inappropriate" and not await db.arena_attempts.find_one(
+            {"challenge_id": challenge_id, "user_id": current_user.id}):
+        raise HTTPException(status_code=400, detail="Try the scenario before reporting a problem with it")
+    since = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+    if await db.arena_flags.count_documents({"user_id": current_user.id, "created_at": {"$gte": since}}) >= FLAG_DAILY_LIMIT:
+        raise HTTPException(status_code=429, detail="Too many reports today")
+    if await db.arena_flags.find_one({"challenge_id": challenge_id, "user_id": current_user.id}):
+        raise HTTPException(status_code=409, detail="You already reported this scenario")
+    await db.arena_flags.insert_one({
+        "id": str(uuid.uuid4()), "challenge_id": challenge_id, "user_id": current_user.id,
+        "user_name": current_user.full_name, "reason": data.reason, "note": note, "resolved": False,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    await db.arena_challenges.update_one({"id": challenge_id}, {"$inc": {"flag_count": 1}})
+    # Enough reports take the scenario offline until the teacher looks again
+    res = await db.arena_challenges.update_one(
+        {"id": challenge_id, "status": "approved", "flag_count": {"$gte": FLAG_HIDE_THRESHOLD}},
+        {"$set": {"status": "pending", "review_reason": "flagged",
+                  "updated_at": datetime.now(timezone.utc).isoformat()}})
+    return {"flagged": True, "hidden": res.modified_count > 0}
+
+
+@api_router.get("/teacher/arena/review")
+async def get_review_queue(status: str = "queue", current_user: User = Depends(require_teacher)):
+    mine = {"source": "peer", "class_teacher_id": current_user.id}
+    filters = {
+        "queue": {"$or": [{"status": "pending"}, {"status": "approved", "needs_review": True}]},
+        "pending": {"status": "pending"}, "approved": {"status": "approved"},
+        "rejected": {"status": "rejected"}, "all": {},
+    }
+    if status not in filters:
+        raise HTTPException(status_code=400, detail="Unknown status filter")
+    docs = await db.arena_challenges.find({**mine, **filters[status]}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    flags = await db.arena_flags.find(
+        {"challenge_id": {"$in": [d["id"] for d in docs]}, "resolved": False}, {"_id": 0}).to_list(2000)
+    flags_by_id = {}
+    for f in flags:
+        flags_by_id.setdefault(f["challenge_id"], []).append(f)
+    counts = {
+        "pending": await db.arena_challenges.count_documents({**mine, "status": "pending"}),
+        "flagged": await db.arena_challenges.count_documents({**mine, "status": "pending", "review_reason": "flagged"}),
+        "needs_review": await db.arena_challenges.count_documents({**mine, "status": "approved", "needs_review": True}),
+    }
+    return {"counts": counts,
+            "scenarios": [{**_author_view(d), "misconception_info": _misconception_info(d["misconception"]),
+                           "open_flags": flags_by_id.get(d["id"], [])} for d in docs]}
+
+
+class ReviewDecision(BaseModel):
+    decision: str
+    note: str = ""
+    visibility: str = "class"
+
+
+@api_router.post("/teacher/arena/{challenge_id}/review")
+async def review_peer_challenge(challenge_id: str, data: ReviewDecision,
+                                current_user: User = Depends(require_teacher)):
+    doc = await db.arena_challenges.find_one(
+        {"id": challenge_id, "source": "peer", "class_teacher_id": current_user.id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Scenario not found")
+    if data.decision not in ("approve", "reject"):
+        raise HTTPException(status_code=400, detail="Decision must be 'approve' or 'reject'")
+    note = _clean_text(data.note)
+    if len(note) > 300:
+        raise HTTPException(status_code=400, detail="Keep the note under 300 characters")
+    if data.decision == "reject" and len(note) < 3:
+        raise HTTPException(status_code=400, detail="Tell the student what to fix")
+    if data.visibility not in ("class", "public"):
+        raise HTTPException(status_code=400, detail="Visibility must be 'class' or 'public'")
+    if data.decision == "approve" and data.visibility == "public" and not current_user.verified:
+        raise HTTPException(status_code=403, detail="Only verified teachers can publish scenarios to everyone")
+
+    now = datetime.now(timezone.utc).isoformat()
+    update = {"review": {"by": current_user.id, "by_name": current_user.full_name, "decision": data.decision,
+                         "note": note, "at": now},
+              "needs_review": False, "updated_at": now}
+    if data.decision == "approve":
+        update.update({"status": "approved", "visibility": data.visibility, "review_reason": None,
+                       "flag_count": 0, "approved_at": doc.get("approved_at") or now})
+    else:
+        update["status"] = "rejected"
+    # Conditional update: a second teacher (or a double click) can't review the same version twice
+    res = await db.arena_challenges.update_one(
+        {"id": challenge_id, "$or": [{"status": "pending"}, {"status": "approved", "needs_review": True}]},
+        {"$set": update})
+    if res.modified_count == 0:
+        raise HTTPException(status_code=409, detail="This scenario has already been reviewed")
+
+    if data.decision == "approve":
+        await db.arena_flags.update_many({"challenge_id": challenge_id, "resolved": False}, {"$set": {"resolved": True}})
+        first = await db.arena_challenges.update_one(
+            {"id": challenge_id, "approval_rewarded": {"$ne": True}},
+            {"$set": {"approval_rewarded": True}, "$inc": {"stats.author_points": AUTHOR_APPROVAL_POINTS}})
+        if first.modified_count:
+            await award_points(doc["author_id"], AUTHOR_APPROVAL_POINTS, "arena_author")
+            await evaluate_badges(doc["author_id"])
+    return _author_view(await db.arena_challenges.find_one({"id": challenge_id}, {"_id": 0}))
+
+
+@api_router.get("/arena/leaderboard")
+async def arena_leaderboard(board: str = "hunters", scope: str = "all",
+                            current_user: User = Depends(get_current_user)):
+    if board not in ("hunters", "authors") or scope not in ("all", "class"):
+        raise HTTPException(status_code=400, detail="Unknown leaderboard")
+    query = {"role": "student"}
+    if scope == "class":
+        class_id = current_user.id if current_user.role == "teacher" else current_user.teacher_id
+        if not class_id:
+            return []
+        query["teacher_id"] = class_id
+    students = await db.users.find(query, {"_id": 0, "id": 1, "full_name": 1, "debug_rating": 1}).to_list(5000)
+    by_id = {s["id"]: s for s in students}
+    rows = []
+    if board == "hunters":
+        attempts = await db.arena_attempts.find(
+            {"user_id": {"$in": list(by_id)}},
+            {"_id": 0, "user_id": 1, "challenge_id": 1, "step_correct": 1, "completed_at": 1}).to_list(50000)
+        per_user = {}
+        for a in attempts:
+            per_user.setdefault(a["user_id"], []).append(a)
+        for uid, user_attempts in per_user.items():
+            first = _first_attempts(user_attempts)
+            if len(first) < 3:  # a couple of lucky guesses shouldn't top the board
+                continue
+            rows.append({"user_id": uid, "full_name": by_id[uid]["full_name"],
+                         "debug_rating": by_id[uid].get("debug_rating", RATING_START),
+                         "bugs_found": sum(1 for a in first.values() if a.get("step_correct")),
+                         "scenarios_attempted": len(first)})
+        rows.sort(key=lambda r: (r["debug_rating"], r["bugs_found"]), reverse=True)
+    else:
+        docs = await db.arena_challenges.find(
+            {"source": "peer", "status": "approved", "author_id": {"$in": list(by_id)}}, {"_id": 0}).to_list(5000)
+        per_author = {}
+        for d in docs:
+            stats = d.get("stats") or {}
+            row = per_author.setdefault(d["author_id"], {
+                "user_id": d["author_id"], "full_name": by_id[d["author_id"]]["full_name"],
+                "approved_scenarios": 0, "solvers": 0, "calibrated": 0, "author_points": 0})
+            row["approved_scenarios"] += 1
+            row["solvers"] += stats.get("solvers", 0)
+            row["calibrated"] += 1 if d.get("calibrated") else 0
+            row["author_points"] += stats.get("author_points", 0)
+        rows = sorted(per_author.values(), key=lambda r: (r["author_points"], r["calibrated"]), reverse=True)
+    rows = rows[:20]
+    for i, r in enumerate(rows):
+        r["rank"] = i + 1
+    return rows
+
+
+@api_router.get("/teacher/worksheet")
+async def get_worksheet(ids: str = "", current_user: User = Depends(require_teacher)):
+    """Printable offline sheet plus answer key. Letters are shuffled per challenge, the same on every print."""
+    wanted = [i for i in dict.fromkeys(part.strip() for part in ids.split(",")) if i]
+    if not wanted:
+        raise HTTPException(status_code=400, detail="Pick at least one challenge")
+    if len(wanted) > WORKSHEET_MAX_ITEMS:
+        raise HTTPException(status_code=400, detail=f"A worksheet holds at most {WORKSHEET_MAX_ITEMS} challenges")
+    items, answer_key = [], []
+    for number, challenge_id in enumerate(wanted, start=1):
+        c = await _load_visible_challenge(current_user, challenge_id)
+        options = _shuffled(c["explanations"], c["id"])
+        letters = "ABCD"
+        items.append({"number": number, "id": c["id"], "title": c["title"], "subject": c["subject"],
+                      "source": "peer" if _is_peer(c) else "system",
+                      "author_name": c.get("author_name") if _is_peer(c) else None,
+                      "problem": c["problem"], "steps": c["steps"],
+                      "explanations": [{"letter": letters[i], "text": t} for i, t in enumerate(options)],
+                      "time_limit_seconds": c.get("time_limit_seconds")})
+        answer_key.append({"number": number, "title": c["title"], "flawed_step": c["flawed_step"],
+                           "flawed_step_label": f"Step {c['flawed_step'] + 1}",
+                           "correct_letter": letters[options.index(c["correct_explanation"])],
+                           "correct_explanation": c["correct_explanation"],
+                           "misconception": _misconception_info(c["misconception"]), "debrief": c["debrief"]})
+    return {"teacher_name": current_user.full_name, "generated_at": datetime.now(timezone.utc).isoformat(),
+            "items": items, "answer_key": answer_key}
 
 
 # ---------------- Activities ----------------
@@ -825,26 +1337,87 @@ def _latest_per_item(records: list, user_key: str, item_key: str) -> list:
     return list(latest.values())
 
 
+# Alert thresholds: a red banner needs a real sample, so "1 of 2 students = 50%" never fires one.
+DIAG_ALERT_MIN_TESTED = 5
+DIAG_ALERT_MIN_HOLDING = 3
+DIAG_ALERT_RED_RATE = 0.40
+DIAG_ALERT_WATCH_RATE = 0.25
+
+
+def _question_tags(question: dict) -> set:
+    return set((question.get("misconceptions") or {}).values())
+
+
 @api_router.get("/teacher/diagnostics")
-async def get_class_diagnostics(current_user: User = Depends(require_teacher)):
+async def get_class_diagnostics(include_peer: bool = True, current_user: User = Depends(require_teacher)):
     students = await db.users.find({"teacher_id": current_user.id}, {"_id": 0, "id": 1, "full_name": 1}).to_list(500)
     names = {s["id"]: s["full_name"] for s in students}
     ids = list(names)
     fields = {"_id": 0, "misconceptions": 1, "completed_at": 1}
     quiz_attempts = await db.quiz_attempts.find(
-        {"user_id": {"$in": ids}}, {**fields, "user_id": 1, "quiz_id": 1}).to_list(10000)
+        {"user_id": {"$in": ids}}, {**fields, "user_id": 1, "quiz_id": 1, "answers": 1}).to_list(10000)
     arena_attempts = await db.arena_attempts.find(
-        {"user_id": {"$in": ids}}, {**fields, "user_id": 1, "challenge_id": 1}).to_list(10000)
+        {"user_id": {"$in": ids}}, {**fields, "user_id": 1, "challenge_id": 1, "selected_step": 1}).to_list(10000)
     contest_entries = await db.tournament_entries.find(
         {"student_id": {"$in": ids}, "score": {"$ne": None}},
         {**fields, "student_id": 1, "tournament_id": 1}).to_list(10000)
 
+    # Peer scenarios count only once a teacher has vouched for them (approved, or withdrawn after approval)
+    challenges = {c["id"]: c for c in await db.arena_challenges.find(
+        {"id": {"$in": list({a["challenge_id"] for a in arena_attempts})}},
+        {"_id": 0, "id": 1, "source": 1, "status": 1, "misconception": 1}).to_list(5000)}
+
+    def counts(attempt):
+        c = challenges.get(attempt["challenge_id"])
+        if c is None:
+            return False
+        return not _is_peer(c) or (include_peer and c.get("status") in ("approved", "withdrawn"))
+    arena_attempts = [a for a in arena_attempts if counts(a)]
+
     # Only each student's latest attempt per item counts, so a misconception they fixed on a retake drops off.
-    records = (
-        [(r["user_id"], r) for r in _latest_per_item(quiz_attempts, "user_id", "quiz_id")]
-        + [(r["user_id"], r) for r in _latest_per_item(arena_attempts, "user_id", "challenge_id")]
-        + [(r["student_id"], r) for r in _latest_per_item(contest_entries, "student_id", "tournament_id")]
-    )
+    latest_quiz = _latest_per_item(quiz_attempts, "user_id", "quiz_id")
+    latest_arena = _latest_per_item(arena_attempts, "user_id", "challenge_id")
+    latest_contest = _latest_per_item(contest_entries, "student_id", "tournament_id")
+    contest_quiz = {t["id"]: t["quiz_id"] for t in await db.tournaments.find(
+        {"id": {"$in": list({e["tournament_id"] for e in latest_contest})}}, {"_id": 0, "id": 1, "quiz_id": 1}).to_list(500)}
+    quizzes = {q["id"]: q for q in await db.quizzes.find(
+        {"id": {"$in": list({a["quiz_id"] for a in latest_quiz} | set(contest_quiz.values()))}},
+        {"_id": 0, "id": 1, "questions": 1}).to_list(500)}
+
+    # tested[tag]: students who answered something that could reveal the tag; holding[tag]: those who showed it
+    tested, holding, occurrences, peer_occurrences = {}, {}, {}, {}
+
+    def mark_tested(tag, uid):
+        tested.setdefault(tag, set()).add(uid)
+
+    def record_hits(uid, record):
+        for hit in record.get("misconceptions") or []:
+            tag = hit["tag"]
+            holding.setdefault(tag, set()).add(uid)
+            mark_tested(tag, uid)  # so holding is always a subset of tested, even if a quiz was edited later
+            occurrences[tag] = occurrences.get(tag, 0) + 1
+            if hit.get("source") == "peer":
+                peer_occurrences[tag] = peer_occurrences.get(tag, 0) + 1
+
+    for a in latest_quiz:
+        quiz = quizzes.get(a["quiz_id"])
+        if quiz:
+            for question, answer in zip(quiz["questions"], a.get("answers") or []):
+                if isinstance(answer.get("selected"), str) and answer["selected"] in question.get("options", []):
+                    for tag in _question_tags(question):
+                        mark_tested(tag, a["user_id"])
+        record_hits(a["user_id"], a)
+    for a in latest_arena:
+        if a.get("selected_step") is not None:  # a timed-out blank attempt tests nothing
+            mark_tested(challenges[a["challenge_id"]]["misconception"], a["user_id"])
+        record_hits(a["user_id"], a)
+    for e in latest_contest:
+        # Contest entries keep no answers; the contest UI makes students answer every question
+        quiz = quizzes.get(contest_quiz.get(e["tournament_id"]))
+        for question in (quiz or {}).get("questions", []):
+            for tag in _question_tags(question):
+                mark_tested(tag, e["student_id"])
+        record_hits(e["student_id"], e)
 
     # "Assessed" = took something that can reveal a misconception (diagnostic quiz, arena, or contest on one)
     diagnostic_quiz_ids = {q["id"] for q in await db.quizzes.find({"diagnostic": True}, {"_id": 0, "id": 1}).to_list(200)}
@@ -853,19 +1426,38 @@ async def get_class_diagnostics(current_user: User = Depends(require_teacher)):
     assessed = {r["user_id"] for r in quiz_attempts if r["quiz_id"] in diagnostic_quiz_ids}
     assessed |= {r["user_id"] for r in arena_attempts}
     assessed |= {r["student_id"] for r in contest_entries if r["tournament_id"] in diagnostic_contest_ids}
-    assessed |= {uid for uid, r in records if r.get("misconceptions")}
+    assessed |= set().union(*holding.values()) if holding else set()
 
-    by_tag = {}
-    for uid, r in records:
-        for hit in r.get("misconceptions") or []:
-            row = by_tag.setdefault(hit["tag"], {"students": set(), "occurrences": 0})
-            row["students"].add(uid)
-            row["occurrences"] += 1
-    rows = [{**_misconception_info(tag), "students": len(v["students"]), "occurrences": v["occurrences"],
-             "student_names": sorted(names[u] for u in v["students"])}
-            for tag, v in by_tag.items()]
-    rows.sort(key=lambda r: (-r["students"], -r["occurrences"], r["tag"]))
-    return {"students_total": len(students), "students_assessed": len(assessed), "misconceptions": rows}
+    def row(tag):
+        t, h = tested.get(tag, set()), holding.get(tag, set())
+        return {**_misconception_info(tag), "students": len(h), "occurrences": occurrences.get(tag, 0),
+                "peer_occurrences": peer_occurrences.get(tag, 0), "student_names": sorted(names[u] for u in h),
+                "tested_count": len(t), "holding_count": len(h), "rate": round(len(h) / len(t), 2) if t else 0,
+                "tested_ids": sorted(t), "holding_ids": sorted(h)}
+
+    misconceptions = sorted((row(tag) for tag in holding), key=lambda r: (-r["students"], -r["occurrences"], r["tag"]))
+    concepts = sorted((row(tag) for tag in tested), key=lambda r: (-r["rate"], -r["holding_count"], r["tag"]))
+    alerts = []
+    for r in concepts:
+        if r["tested_count"] < DIAG_ALERT_MIN_TESTED:
+            continue
+        if r["holding_count"] >= DIAG_ALERT_MIN_HOLDING and r["rate"] >= DIAG_ALERT_RED_RATE:
+            level = "red"
+        elif r["rate"] >= DIAG_ALERT_WATCH_RATE:
+            level = "watch"
+        else:
+            continue
+        alerts.append({k: r[k] for k in ("tag", "subject", "description", "holding_count", "tested_count", "rate")}
+                      | {"level": level})
+    roster = sorted(({"id": s["id"], "name": s["full_name"],
+                      "tested_count": sum(1 for members in tested.values() if s["id"] in members),
+                      "holding_count": sum(1 for members in holding.values() if s["id"] in members)}
+                     for s in students), key=lambda r: r["name"].lower())
+    return {"students_total": len(students), "students_assessed": len(assessed),
+            "students_tested": len(set().union(*tested.values())) if tested else 0,
+            "roster": roster, "misconceptions": misconceptions, "concepts": concepts, "alerts": alerts,
+            "alert_rule": {"min_tested": DIAG_ALERT_MIN_TESTED, "min_holding": DIAG_ALERT_MIN_HOLDING,
+                           "red_rate": DIAG_ALERT_RED_RATE, "watch_rate": DIAG_ALERT_WATCH_RATE}}
 
 
 # ---------------- Stats ----------------
@@ -904,6 +1496,7 @@ async def _full_student_stats(user: dict) -> dict:
     badges_earned = await db.user_badges.count_documents({"user_id": uid})
     recent = sorted(base["attempts"], key=lambda a: str(a.get("completed_at", "")), reverse=True)[:5]
     fresh = await db.users.find_one({"id": uid})
+    arena = await _arena_progress(uid)
 
     return {
         "role": "student", "points": fresh.get("points", 0), "streak_days": fresh.get("streak_days", 0),
@@ -915,6 +1508,7 @@ async def _full_student_stats(user: dict) -> dict:
         "subject_progress": subject_progress,
         "recent_attempts": [{"quiz_title": a.get("quiz_title", "Quiz"), "score": a["score"], "completed_at": str(a.get("completed_at", ""))} for a in recent],
         "teacher_name": fresh.get("teacher_name"), "age_group": ag,
+        **arena,
     }
 
 
@@ -1442,7 +2036,9 @@ async def seed_sample_data(current_user: User = Depends(require_teacher)):
                                       {"seeded": True})
     content = await upsert_catalog(db.content, CONTENT_ITEMS, {"created_at": now.isoformat(), "seeded": True},
                                    {"seeded": True})
-    arena = await upsert_catalog(db.arena_challenges, ARENA_CHALLENGES, {"created_by": "system", "created_at": now},
+    system_arena = {"created_by": "system", "source": "system", "status": "approved", "visibility": "public"}
+    await db.arena_challenges.update_many({"source": {"$exists": False}}, {"$set": system_arena})
+    arena = await upsert_catalog(db.arena_challenges, ARENA_CHALLENGES, {**system_arena, "created_at": now},
                                  {"created_by": "system"})
 
     if not SEED_DEMO_ACCOUNTS:
@@ -1590,6 +2186,11 @@ async def ensure_indexes():
         (db.user_badges, [("user_id", 1), ("key", 1)], {"unique": True}),
         (db.quiz_attempts, [("user_id", 1)], {}),
         (db.arena_attempts, [("user_id", 1)], {}),
+        (db.arena_attempts, [("challenge_id", 1), ("user_id", 1)], {}),
+        (db.arena_challenges, [("id", 1)], {"unique": True}),
+        (db.arena_challenges, [("source", 1), ("status", 1), ("class_teacher_id", 1)], {}),
+        (db.arena_challenges, [("author_id", 1), ("created_at", -1)], {}),
+        (db.arena_flags, [("challenge_id", 1), ("user_id", 1)], {"unique": True}),
         (db.activity_results, [("user_id", 1)], {}),
         (db.point_events, [("user_id", 1), ("created_at", -1)], {}),
         (db.users, [("teacher_id", 1)], {}),

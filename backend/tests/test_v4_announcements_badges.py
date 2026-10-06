@@ -1,4 +1,4 @@
-"""V4 tests: Class Announcements + Badge Collection (12 badges)."""
+"""V4 tests: Class Announcements + Badge Collection (14 badges)."""
 import os
 import uuid
 
@@ -19,6 +19,7 @@ TEACHER = {"username": "teacher_demo", "password": "TeacherDemo123!"}
 BADGE_KEYS = {
     "first_quiz", "ten_quizzes", "perfect_score", "first_activity", "streak_7", "streak_30",
     "points_100", "points_500", "points_1000", "first_idea", "teachers_pick", "contest_champion",
+    "first_trap", "bug_hunter",
 }
 
 
@@ -216,9 +217,9 @@ class TestBadges:
         r = requests.get(f"{API}/badges", headers=_hdr(student_token), timeout=30)
         assert r.status_code == 200, r.text[:300]
         data = r.json()
-        assert data["total"] == 12
+        assert data["total"] == 14
         badges = data["badges"]
-        assert len(badges) == 12
+        assert len(badges) == 14
         assert {b["key"] for b in badges} == BADGE_KEYS
         assert data["earned_count"] == len([b for b in badges if b["earned"]])
         for b in badges:
@@ -312,7 +313,7 @@ class TestBadges:
                            headers=_hdr(teacher_token), timeout=30)
         assert pub.status_code == 200
         pubd = pub.json()
-        assert pubd["total"] == 12
+        assert pubd["total"] == 14
         assert "teachers_pick" in {b["key"] for b in pubd["badges"]}
         assert pubd["earned_count"] == len(pubd["badges"])
         assert "password" not in pubd["user"] and "hashed_password" not in pubd["user"]
@@ -350,7 +351,7 @@ class TestBadges:
         r = requests.get(f"{API}/stats/me", headers=_hdr(student_token), timeout=30)
         assert r.status_code == 200
         d = r.json()
-        assert d["badges_total"] == 12
+        assert d["badges_total"] == 14
         badges = requests.get(f"{API}/badges", headers=_hdr(student_token), timeout=30).json()
         assert d["badges_earned"] == badges["earned_count"]
 

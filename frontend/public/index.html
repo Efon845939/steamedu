@@ -19,6 +19,43 @@
       Learn how to configure a non-root public URL by running `npm run build`.
     -->
         <title>STEAM Hub</title>
+        <script>
+            // Lite mode: decide before React mounts so the first paint already matches,
+            // and only download the Inter web font when lite mode is off.
+            // Keep in sync with src/hooks/use-lite-mode.js.
+            (function () {
+                var doc = document;
+                var lite = false;
+                try {
+                    var stored = null;
+                    try {
+                        stored = window.localStorage.getItem('steamhub:lite');
+                    } catch (e) {}
+                    if (stored === '1') {
+                        lite = true;
+                    } else if (stored !== '0') {
+                        var connection = navigator.connection;
+                        lite = !!(connection && (connection.saveData || /(^|-)2g$/.test(connection.effectiveType || '')));
+                    }
+                } catch (e) {}
+                if (lite) {
+                    doc.documentElement.classList.add('lite');
+                    return;
+                }
+                try {
+                    var preconnect = doc.createElement('link');
+                    preconnect.rel = 'preconnect';
+                    preconnect.href = 'https://fonts.gstatic.com';
+                    preconnect.crossOrigin = 'anonymous';
+                    doc.head.appendChild(preconnect);
+                    var font = doc.createElement('link');
+                    font.id = 'inter-font';
+                    font.rel = 'stylesheet';
+                    font.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap';
+                    doc.head.appendChild(font);
+                } catch (e) {}
+            })();
+        </script>
     </head>
     <body>
         <noscript>You need to enable JavaScript to run this app.</noscript>

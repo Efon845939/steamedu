@@ -1,26 +1,39 @@
-import React, { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import './App.css';
 
 import HomePage from './components/HomePage';
 import AuthPage from './components/AuthPage';
-import Dashboard from './components/Dashboard';
-import QuizPage from './components/QuizPage';
-import ActivitiesPage from './components/ActivitiesPage';
-import IdeasPage from './components/IdeasPage';
-import IdeaDetailPage from './components/IdeaDetailPage';
-import ContentHub from './components/ContentHub';
 import NotFoundPage from './components/NotFoundPage';
-import LeaderboardPage from './components/LeaderboardPage';
-import ContestsPage from './components/ContestsPage';
 import Navbar from './components/Navbar';
+import { ChunkErrorBoundary, PageFallback } from './components/ChunkErrorBoundary';
 import { Toaster } from './components/ui/sonner';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+// Everything past the landing and login pages loads on demand, so a slow connection
+// only downloads the code for the page the student actually opens.
+const Dashboard = lazy(() => import('./components/Dashboard'));
+const QuizPage = lazy(() => import('./components/QuizPage'));
+const ActivitiesPage = lazy(() => import('./components/ActivitiesPage'));
+const IdeasPage = lazy(() => import('./components/IdeasPage'));
+const IdeaDetailPage = lazy(() => import('./components/IdeaDetailPage'));
+const ContentHub = lazy(() => import('./components/ContentHub'));
+const LeaderboardPage = lazy(() => import('./components/LeaderboardPage'));
+const ContestsPage = lazy(() => import('./components/ContestsPage'));
+const ArenaPage = lazy(() => import('./components/ArenaPage'));
+const WorksheetPage = lazy(() => import('./components/WorksheetPage'));
+
+// Unset on Vercel: the frontend and the /api backend share one domain, so requests stay relative
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 const API = `${BACKEND_URL}/api`;
 
 export const AuthContext = React.createContext();
+
+// Reset the error boundary on navigation, so one failed page doesn't block the rest of the app
+const RouteBoundary = ({ children }) => {
+  const location = useLocation();
+  return <ChunkErrorBoundary key={location.pathname}>{children}</ChunkErrorBoundary>;
+};
 
 function App() {
   const [user, setUser] = useState(null);
@@ -76,20 +89,29 @@ function App() {
       <div className="App">
         <BrowserRouter>
           <Navbar />
-          <Routes>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/auth" element={user ? <Navigate to="/dashboard" /> : <AuthPage />} />
-            <Route path="/dashboard" element={user ? <Dashboard /> : <Navigate to="/auth" />} />
-            <Route path="/quiz/:id?" element={user ? <QuizPage /> : <Navigate to="/auth" />} />
-            <Route path="/activities" element={user ? <ActivitiesPage /> : <Navigate to="/auth" />} />
-            <Route path="/ideas" element={user ? <IdeasPage /> : <Navigate to="/auth" />} />
-            <Route path="/ideas/:id" element={user ? <IdeaDetailPage /> : <Navigate to="/auth" />} />
-            <Route path="/leaderboard" element={user ? <LeaderboardPage /> : <Navigate to="/auth" />} />
-            <Route path="/contests" element={user ? <ContestsPage /> : <Navigate to="/auth" />} />
-            <Route path="/tournaments" element={<Navigate to="/contests" />} />
-            <Route path="/content" element={<ContentHub />} />
-            <Route path="*" element={<NotFoundPage />} />
-          </Routes>
+          <RouteBoundary>
+            <Suspense fallback={<PageFallback />}>
+              <Routes>
+                <Route path="/" element={<HomePage />} />
+                <Route path="/auth" element={user ? <Navigate to="/dashboard" /> : <AuthPage />} />
+                <Route path="/dashboard" element={user ? <Dashboard /> : <Navigate to="/auth" />} />
+                <Route path="/quiz/:id?" element={user ? <QuizPage /> : <Navigate to="/auth" />} />
+                <Route path="/activities" element={user ? <ActivitiesPage /> : <Navigate to="/auth" />} />
+                <Route path="/ideas" element={user ? <IdeasPage /> : <Navigate to="/auth" />} />
+                <Route path="/ideas/:id" element={user ? <IdeaDetailPage /> : <Navigate to="/auth" />} />
+                <Route path="/leaderboard" element={user ? <LeaderboardPage /> : <Navigate to="/auth" />} />
+                <Route path="/contests" element={user ? <ContestsPage /> : <Navigate to="/auth" />} />
+                <Route path="/tournaments" element={<Navigate to="/contests" />} />
+                <Route
+                  path="/arena/worksheet"
+                  element={user ? (user.role === 'teacher' ? <WorksheetPage /> : <Navigate to="/arena" />) : <Navigate to="/auth" />}
+                />
+                <Route path="/arena/:id?" element={user ? <ArenaPage /> : <Navigate to="/auth" />} />
+                <Route path="/content" element={<ContentHub />} />
+                <Route path="*" element={<NotFoundPage />} />
+              </Routes>
+            </Suspense>
+          </RouteBoundary>
         </BrowserRouter>
         <Toaster position="top-center" richColors />
       </div>

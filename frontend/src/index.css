@@ -84,3 +84,114 @@ code {
     @apply bg-background text-foreground;
     }
 }
+
+/* ------------------------------------------------------------------
+   Lite mode (html.lite, set by public/index.html + hooks/use-lite-mode)
+   Cuts motion, shadows, blur, gradients and the web font. Photos are
+   skipped in JS (CSS-hidden images would still download).
+   ------------------------------------------------------------------ */
+
+/* Motion: .01ms rather than none so transitionend/animationend still fire
+   (drag-and-drop and Radix presence wait for them). Spinners keep spinning. */
+html.lite {
+  scroll-behavior: auto !important;
+}
+
+html.lite *:not(.spinner):not(.animate-spin),
+html.lite *::before,
+html.lite *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  transition-delay: 0s !important;
+  scroll-behavior: auto !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto !important;
+  }
+
+  *:not(.spinner):not(.animate-spin),
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Shadows: zero only Tailwind's shadow layer so focus rings (ring-*) stay visible. */
+html.lite * {
+  --tw-shadow: 0 0 #0000 !important;
+  --tw-shadow-colored: 0 0 #0000 !important;
+}
+
+html.lite .card-hover:hover,
+html.lite .btn-hover-scale:hover {
+  transform: none !important;
+  box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000) !important;
+}
+
+/* Hover zoom / lift. */
+html.lite [class*="hover:scale-"]:hover,
+html.lite .group:hover [class*="group-hover:scale-"] {
+  --tw-scale-x: 1 !important;
+  --tw-scale-y: 1 !important;
+}
+
+html.lite [class*="hover:translate-y-"]:hover,
+html.lite [class*="hover:-translate-y-"]:hover,
+html.lite .group:hover [class*="group-hover:translate-y-"],
+html.lite .group:hover [class*="group-hover:-translate-y-"] {
+  --tw-translate-y: 0 !important;
+}
+
+html.lite [class*="hover:translate-x-"]:hover,
+html.lite [class*="hover:-translate-x-"]:hover,
+html.lite .group:hover [class*="group-hover:translate-x-"],
+html.lite .group:hover [class*="group-hover:-translate-x-"] {
+  --tw-translate-x: 0 !important;
+}
+
+/* Gradients: flatten to the first colour instead of removing them, so white
+   text on gradient buttons/circles/banners keeps its background. */
+html.lite [class*="bg-gradient-to-"] {
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-from) !important;
+}
+
+/* Full-page washes become plain white. */
+html.lite .min-h-screen[class*="bg-gradient-to-"] {
+  background-image: none !important;
+  background-color: #fff !important;
+}
+
+/* Gradient text (bg-clip-text + text-transparent) becomes solid text. */
+html.lite .lite-solid-text {
+  background: none !important;
+  color: #047857 !important;
+  -webkit-text-fill-color: currentColor;
+}
+
+/* Glass: no blur, opaque white panels. Skip anything that sets white text on
+   itself, so a translucent chip on a coloured banner can't turn white-on-white. */
+html.lite [class*="backdrop-blur"] {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html.lite [class*="bg-white/"]:not([class*="text-white"]) {
+  background-color: #fff !important;
+}
+
+/* Purely decorative nodes (never information). */
+html.lite [data-decor] {
+  display: none !important;
+}
+
+/* No web font: system UI stack (Inter is not downloaded in lite mode). */
+html.lite body {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}

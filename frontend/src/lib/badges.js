@@ -1,12 +1,12 @@
 import { toast } from 'sonner';
 import {
   BookCheck, Layers, Target, Puzzle, Flame, CalendarCheck, Star, Sparkles,
-  Crown, Lightbulb, BadgeCheck, Trophy, Award,
+  Crown, Lightbulb, BadgeCheck, Trophy, Award, Bug, Search,
 } from 'lucide-react';
 
 export const BADGE_ICONS = {
   BookCheck, Layers, Target, Puzzle, Flame, CalendarCheck, Star, Sparkles,
-  Crown, Lightbulb, BadgeCheck, Trophy,
+  Crown, Lightbulb, BadgeCheck, Trophy, Bug, Search,
 };
 
 export const badgeIcon = (name) => BADGE_ICONS[name] || Award;

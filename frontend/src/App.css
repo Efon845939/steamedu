@@ -14,8 +14,258 @@
   }
 }
 
+/* ---------- Offline "Debug Hunt" worksheet (WorksheetPage) ----------
+   The same markup is shown as an on-screen preview (.ws-screen) and printed from a
+   body-level portal (.print-sheet). */
+@media screen {
+  .print-sheet {
+    display: none;
+  }
+}
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+@media print {
+  @page {
+    margin: 15mm;
+  }
+  body:not(.printing-sheet) .print-sheet {
+    display: none;
+  }
+  body.printing-sheet #root {
+    display: none !important;
+  }
+  body.printing-sheet .print-sheet {
+    display: block !important;
+    position: static;
+  }
+  /* Overrides the "body * { visibility: hidden }" certificate rule above. */
+  .print-sheet,
+  .print-sheet * {
+    visibility: visible;
+  }
+  .print-sheet {
+    color: #000;
+    background: #fff;
+    font: 11pt/1.45 Georgia, 'Times New Roman', serif;
+  }
+  .print-sheet .ws-doc {
+    color: #000;
+  }
+  .ws-item {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .ws-header,
+  .ws-item-title,
+  .ws-label {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+  .ws-answer-key {
+    break-before: page;
+    page-break-before: always;
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
+  }
+  /* Printing only the key: no blank first page. */
+  .ws-answer-key.ws-key-only {
+    break-before: auto;
+    page-break-before: auto;
+  }
+}
+
+.ws-doc {
+  color: #111827;
+  font-family: Georgia, 'Times New Roman', serif;
+  text-align: left;
+}
+
+.ws-screen {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+@media (min-width: 640px) {
+  .ws-screen {
+    padding: 32px 40px;
+  }
+}
+
+.ws-header {
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #111827;
+}
+
+.ws-title {
+  margin: 0 0 4px;
+  font-size: 1.5em;
+  font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.ws-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 16px;
+  margin: 0;
+  color: #374151;
+  font-size: 0.9em;
+}
+
+.ws-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 32px;
+  margin-top: 14px;
+}
+
+.ws-field {
+  white-space: nowrap;
+}
+
+.ws-blank {
+  display: inline-block;
+  width: 12em;
+  height: 1em;
+  margin-left: 4px;
+  border-bottom: 1px solid #111827;
+  vertical-align: baseline;
+}
+
+.ws-blank-short {
+  width: 8em;
+}
+
+.ws-instructions {
+  margin: 0 0 16px;
+  padding: 8px 10px;
+  border: 1px solid #6b7280;
+  border-radius: 4px;
+  font-style: italic;
+}
+
+.ws-item {
+  margin: 0 0 20px;
+  padding-top: 14px;
+  border-top: 1px solid #d1d5db;
+}
+
+.ws-item:first-of-type {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.ws-item-title {
+  margin: 0 0 6px;
+  font-size: 1.1em;
+  font-weight: 700;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.ws-item-meta {
+  color: #4b5563;
+  font-size: 0.85em;
+  font-weight: 400;
+}
+
+.ws-label {
+  margin: 10px 0 4px;
+  color: #374151;
+  font-size: 0.8em;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ws-problem {
+  margin: 0 0 6px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ws-mono {
+  padding: 6px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: #f9fafb;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.95em;
+}
+
+.ws-steps,
+.ws-options {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ws-steps > li,
+.ws-options > li {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0 0 6px;
+}
+
+.ws-mark {
+  flex: none;
+  width: 1.2em;
+  font-size: 1.15em;
+  line-height: 1;
+  text-align: center;
+}
+
+.ws-num {
+  flex: none;
+  min-width: 1.5em;
+  font-weight: 700;
+}
+
+.ws-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ws-write-box {
+  min-height: 30mm;
+  margin-top: 10px;
+  padding: 6px 8px;
+  border: 1.5px solid #111827;
+  border-radius: 4px;
+}
+
+.ws-write-label {
+  font-size: 0.85em;
+  font-weight: 700;
+}
+
+.ws-answer-key {
+  margin-top: 32px;
+  padding-top: 16px;
+  border-top: 3px double #111827;
+}
+
+.ws-key-row {
+  margin: 2px 0;
+  overflow-wrap: anywhere;
+}
+
+.ws-key-quote {
+  color: #4b5563;
+  font-style: italic;
+}
+
+
 
 * {
   margin: 0;

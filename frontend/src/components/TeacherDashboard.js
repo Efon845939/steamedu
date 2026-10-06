@@ -13,8 +13,10 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import axios from 'axios';
 import { toast } from 'sonner';
 import { SUBJECTS, AGE_GROUPS, formatApiError } from '../lib/steam';
-import { BadgeCheck, Trophy, Users, Search, UserPlus } from 'lucide-react';
+import { BadgeCheck, Trophy, Users, Search, UserPlus, Printer } from 'lucide-react';
 import { TeacherAnnouncements } from './TeacherAnnouncements';
+import { MisconceptionHeatmap } from './MisconceptionHeatmap';
+import { ScenarioReviewQueue } from './ScenarioReviewQueue';
 
 const TeacherDashboard = ({ stats, refreshStats }) => {
   const { user, setUser, API } = useContext(AuthContext);
@@ -22,6 +24,8 @@ const TeacherDashboard = ({ stats, refreshStats }) => {
   const [challenges, setChallenges] = useState([]);
   const [tournaments, setTournaments] = useState([]);
   const [quizzes, setQuizzes] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [seeding, setSeeding] = useState(false);
   const [challengeOpen, setChallengeOpen] = useState(false);
   const [tournamentOpen, setTournamentOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -43,6 +47,8 @@ const TeacherDashboard = ({ stats, refreshStats }) => {
       setQuizzes(qRes.data);
     } catch (e) {
       console.error(e);
+    } finally {
+      setLoaded(true);
     }
   }, [API, user.id]);
 
@@ -65,6 +71,22 @@ const TeacherDashboard = ({ stats, refreshStats }) => {
     }, 300);
     return () => clearTimeout(t);
   }, [searchQuery, API]);
+
+  // A fresh deployment has an empty database: let the first teacher load the built-in catalogue
+  const loadStarterContent = async () => {
+    setSeeding(true);
+    try {
+      const res = await axios.post(`${API}/seed-data`);
+      toast.success(`Loaded ${res.data.quizzes} quizzes, ${res.data.activities} activities, `
+        + `${res.data.content_items} articles and ${res.data.arena_challenges} Debug Arena challenges`);
+      fetchAll();
+      refreshStats();
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail));
+    } finally {
+      setSeeding(false);
+    }
+  };
 
   const addStudent = async (student) => {
     try {
@@ -182,6 +204,28 @@ const TeacherDashboard = ({ stats, refreshStats }) => {
               </CardContent>
             </Card>
           ))}
+        </div>
+
+        {loaded && quizzes.length === 0 && (
+          <Card className="bg-amber-50 border-2 border-amber-200 mb-8" data-testid="starter-content-card">
+            <CardHeader>
+              <CardTitle className="text-lg">No learning content yet</CardTitle>
+              <CardDescription>
+                This platform is empty. Load the built-in quizzes, activities, articles and Debug Arena challenges
+                so your students have something to work on. It's safe to run again — nothing is deleted.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button onClick={loadStarterContent} disabled={seeding} className="bg-amber-600 hover:bg-amber-700" data-testid="load-starter-content-btn">
+                {seeding ? 'Loading…' : 'Load starter content'}
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* What the class misunderstands, not what it scored */}
+        <div className="mb-8">
+          <MisconceptionHeatmap />
         </div>
 
         {/* Action buttons */}
@@ -306,6 +350,16 @@ const TeacherDashboard = ({ stats, refreshStats }) => {
               </form>
             </DialogContent>
           </Dialog>
+
+          <Link to="/arena/worksheet">
+            <Button variant="outline" className="border-rose-600 text-rose-600 hover:bg-rose-50" data-testid="worksheet-btn">
+              <Printer className="w-4 h-4 mr-2" />Offline worksheet
+            </Button>
+          </Link>
+        </div>
+
+        <div className="mb-8">
+          <ScenarioReviewQueue />
         </div>
 
         <div className="mb-8">
