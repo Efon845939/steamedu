@@ -5,7 +5,7 @@ Interactive STEM/STEAM-focused educational web platform for high school–colleg
 
 ## User Personas
 - **Student** (registers with age → age group 13-15 / 16-18 / 18+): learns via age-matched quizzes/activities/content, earns points & streaks, competes in tournaments, shares ideas, chats with teachers.
-- **Teacher** (registers with special code `STEAM-TEACH-2026`): mentors students (adds them via chat), creates daily challenges, hosts tournaments; earns a verified checkmark (≥2 students + ≥3 challenges) that unlocks open/professional tournaments.
+- **Teacher** (registers with a private signup code — the `TEACHER_SIGNUP_CODE` env var, never committed): mentors students (adds them via chat), creates daily challenges, hosts tournaments; earns a verified checkmark (≥2 students + ≥3 challenges) that unlocks open/professional tournaments.
 
 ## Core Requirements (all explicit user requests)
 1. ✅ Real progress tracking — quiz/activity results saved per user; dashboard shows real stats (points, streak, progress %, per-subject progress) — NOT demo numbers
