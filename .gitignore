@@ -84,3 +84,6 @@ android-sdk/
 credentials.json
 *.key
 .credentials
+
+# Templates with placeholder values only
+!.env.example

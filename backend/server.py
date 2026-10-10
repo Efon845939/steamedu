@@ -2311,6 +2311,16 @@ async def seed_sample_data(current_user: User = Depends(require_teacher)):
             "content_items": len(content), "arena_challenges": len(arena)}
 
 
+@api_router.get("/health")
+async def health():
+    # Uptime monitors and the deploy guide hit this; a 503 means the API is up but MongoDB is not reachable.
+    try:
+        await db.command("ping")
+    except Exception:
+        raise HTTPException(status_code=503, detail="database unreachable")
+    return {"status": "ok"}
+
+
 app.include_router(api_router)
 
 _cors_origins = [o.strip() for o in os.environ.get('CORS_ORIGINS', '*').split(',')]

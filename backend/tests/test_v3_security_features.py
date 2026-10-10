@@ -9,11 +9,14 @@ from dotenv import dotenv_values
 
 frontend_env = dotenv_values("/app/frontend/.env")
 base_url = os.environ.get("REACT_APP_BACKEND_URL") or frontend_env.get("REACT_APP_BACKEND_URL")
-if not base_url:
-    raise RuntimeError("REACT_APP_BACKEND_URL missing")
+if not base_url:  # live-server suite: skip instead of breaking a plain `pytest` run
+    pytest.skip("REACT_APP_BACKEND_URL not set", allow_module_level=True)
 API = f"{base_url.rstrip('/')}/api"
 
-TEACHER_CODE = "STEAM-TEACH-2026"
+# Must match the code the live backend was started with (shell env, else backend/.env)
+TEACHER_CODE = (os.environ.get("TEACHER_SIGNUP_CODE")
+                or dotenv_values(os.path.join(os.path.dirname(__file__), "..", ".env")).get("TEACHER_SIGNUP_CODE")
+                or "TEST-CODE")
 STUDENT = {"username": "teststudent", "password": "TestPass123!"}
 TEACHER = {"username": "teacher_demo", "password": "TeacherDemo123!"}
 
