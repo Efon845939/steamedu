@@ -15,8 +15,10 @@ Render'ın ücretsiz planı 15 dakika boşta kalınca uyuyor ve ilk istek ~50 sn
 
 1. https://cloud.mongodb.com → yeni proje → **Create cluster** → **M0 (Free)**, sağlayıcı AWS, bölge **Frankfurt (eu-central-1)**.
 2. **Database Access** → kullanıcı oluştur, şifreyi "Autogenerate" ile üret ve sadece bir parola yöneticisine kaydet.
+   Yetki olarak "Atlas admin" değil, **Specific Privileges → `readWrite` @ `steamedu`** seç. Şifre sızarsa zarar bu veritabanıyla sınırlı kalır.
 3. **Network Access** → **Allow access from anywhere** (`0.0.0.0/0`).
-   Vercel fonksiyonlarının sabit IP'si yok; korumayı kullanıcı şifresi ve TLS sağlıyor.
+   Vercel Hobby'de sabit çıkış IP'si yok, o yüzden mecburen her IP'ye açıyoruz. TLS sadece trafiği şifreler, kimin bağlanabileceğini kısıtlamaz.
+   Yani tek kilit `MONGO_URL` içindeki şifre: onu hiçbir yere yapıştırma. Gerçek öğrencilerle pilot yaparsan isim yerine takma ad kullandır, gereksiz kişisel veri toplama.
 4. **Connect → Drivers** → `mongodb+srv://...` bağlantı adresini kopyala, `<password>` kısmına şifreyi yaz.
 
 ## 2. Vercel
