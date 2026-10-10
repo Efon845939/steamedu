@@ -81,6 +81,8 @@ const ScenarioItem = ({ s, verified, onReviewed, API }) => {
         decision,
         note: trimmed.slice(0, NOTE_MAX),
         visibility,
+        // the version on screen: if the author edits it meanwhile, the server refuses and we reload
+        revision: s.revisions ?? 0,
       });
       if (decision === 'approve') {
         const who = visibility === 'public' ? 'everyone' : 'your class';
@@ -136,7 +138,9 @@ const ScenarioItem = ({ s, verified, onReviewed, API }) => {
       {s.needs_review && (
         <p className="mb-3 flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900" data-testid={`review-needs-check-${s.id}`}>
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-          Fewer than 20% of solvers found the bug — check the answer key
+          {s.needs_review_reason === 'reports'
+            ? 'Students outside your class reported this scenario — read the reports below'
+            : 'Fewer than 20% of solvers found the bug — check the answer key'}
         </p>
       )}
 

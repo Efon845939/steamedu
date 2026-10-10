@@ -4,6 +4,7 @@ Runs in-process against mongomock, so it needs no live server:
     pip install mongomock-motor httpx pytest
     pytest backend/tests/test_arena_diagnostics.py
 """
+import asyncio
 import os
 import sys
 import uuid
@@ -22,6 +23,7 @@ import motor.motor_asyncio  # noqa: E402
 motor.motor_asyncio.AsyncIOMotorClient = mongomock_motor.AsyncMongoMockClient
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+import httpx  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 import server  # noqa: E402
@@ -57,9 +59,9 @@ def client():
 
 
 @pytest.fixture(autouse=True)
-def _no_registration_rate_limit():
-    # Every TestClient request comes from one IP, so the in-memory registration limit would trip
-    server._rate_buckets.clear()
+def _no_registration_rate_limit(client):
+    # Every TestClient request comes from one IP, so the registration limit would trip
+    client.portal.call(server.db.register_attempts.delete_many, {})
 
 
 @pytest.fixture(scope="module")
@@ -267,9 +269,11 @@ def test_contest_entries_feed_diagnostics_but_stay_private(client, teacher, diag
     assert _by_tag(diag)[tag]["occurrences"] == hits
 
     ranking = client.get(f"/api/tournaments/{contest_id}", headers=student).json()["ranking"]
-    assert ranking and all("misconceptions" not in e for e in ranking)
+    assert ranking and all("misconceptions" not in e and "answers" not in e for e in ranking)
     mine = next(t for t in client.get("/api/tournaments", headers=student).json() if t["id"] == contest_id)
-    assert "misconceptions" not in mine["my_entry"]
+    assert "misconceptions" not in mine["my_entry"] and "answers" not in mine["my_entry"]
+    assert client.post(f"/api/tournaments/{contest_id}/submit", json={"answers": answers},
+                       headers=student).status_code == 400  # one shot
 
 
 def test_blank_arena_attempt_tests_nothing(client, teacher, arena):
@@ -315,3 +319,99 @@ def test_alerts_need_a_real_sample(client, teacher, diagnostic_quiz):
     assert set(alerts) == {"motion-implies-force", "heavier-falls-faster"}
     assert diag["alert_rule"]["min_tested"] == server.DIAG_ALERT_MIN_TESTED
     assert diag["concepts"][0]["tag"] == "motion-implies-force"  # highest rate first
+
+
+# ---------------- Health-check regressions ----------------
+def test_teacher_cannot_take_over_another_teachers_student(client):
+    mine, theirs = _new_teacher(client, "teacher_keep"), _new_teacher(client, "teacher_grab")
+    kid = _new_student(client, mine, "kept_kid")
+    kid_id = _student_id(client, kid)
+    r = client.post(f"/api/teacher/add-student/{kid_id}", headers=theirs)
+    assert r.status_code == 400 and r.json()["detail"] == "Student already has a teacher"
+    assert client.post(f"/api/teacher/add-student/{kid_id}", headers=mine).json()["detail"] == "Already your student"
+    assert client.get("/api/auth/me", headers=kid).json()["teacher_name"] == "Teacher_Keep"
+    assert _diagnostics(client, theirs)["students_total"] == 0
+
+
+def test_parallel_submits_pay_only_the_first_attempt(client, teacher, arena, monkeypatch):
+    student = _new_student(client, teacher, "arena_parallel")
+    seed = ARENA_CHALLENGES[2]
+    cid = arena[seed["title"]]["id"]
+    body = {"selected_step": seed["flawed_step"], "selected_explanation": seed["correct_explanation"]}
+
+    # Real Motor yields to the event loop on every query; mongomock never does, which hides races
+    collection_cls = type(server.db.arena_attempts)
+    original = collection_cls.find_one
+
+    async def yielding_find_one(self, *args, **kwargs):
+        result = await original(self, *args, **kwargs)
+        await asyncio.sleep(0.01)
+        return result
+    monkeypatch.setattr(collection_cls, "find_one", yielding_find_one)
+
+    async def burst():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=server.app), base_url="http://test") as ac:
+            return await asyncio.gather(*[ac.post(f"/api/arena/challenges/{cid}/attempt", json=body, headers=student)
+                                          for _ in range(5)])
+    responses = client.portal.call(burst)
+    assert [r.status_code for r in responses] == [200] * 5
+    assert sum(r.json()["first_attempt"] for r in responses) == 1
+    assert sum(r.json()["points_earned"] for r in responses) == 100
+    me = client.get("/api/auth/me", headers=student).json()
+    assert me["points"] == 100
+    assert client.get("/api/stats/me", headers=student).json()["debug_rating"] == \
+        next(r.json()["rating"]["after"] for r in responses if r.json()["first_attempt"])
+
+
+def test_arena_retry_cannot_erase_a_logged_misconception(client, arena):
+    me = _new_teacher(client, "teacher_retry")
+    kid = _new_student(client, me, "retry_kid")
+    late = _new_student(client, me, "late_kid")
+    seed = _seed_challenge("Does a Lever Save Work?")
+    cid = arena[seed["title"]]["id"]
+    wrong = (seed["flawed_step"] + 1) % len(seed["steps"])
+
+    first = _attempt(client, kid, cid, selected_step=wrong)
+    _attempt(client, kid, cid, seconds_used=120)  # blank retry: no evidence
+    _attempt(client, kid, cid, selected_step=first["flawed_step"],  # retry with the revealed answer
+             selected_explanation=first["correct_explanation"])
+    _attempt(client, late, cid, seconds_used=120)  # blank first try, then a real one
+    _attempt(client, late, cid, selected_step=wrong)
+
+    concept = _concepts(_diagnostics(client, me))[seed["misconception"]]
+    assert set(concept["holding_ids"]) == set(concept["tested_ids"]) == {_student_id(client, kid), _student_id(client, late)}
+
+
+def test_contests_test_only_the_concepts_a_student_answered(client, diagnostic_quiz):
+    me = _new_teacher(client, "teacher_contest_answered")
+    blank, legacy = _new_student(client, me, "contest_blank"), _new_student(client, me, "contest_legacy")
+    contest = client.post("/api/tournaments", headers=me, json={
+        "title": "Empty Cup", "subject": "Science", "age_group": "all", "scope": "class",
+        "quiz_id": diagnostic_quiz["id"], "duration_days": 3}).json()
+    for kid in (blank, legacy):
+        assert client.post(f"/api/tournaments/{contest['id']}/join", headers=kid).status_code == 200
+    assert client.post(f"/api/tournaments/{contest['id']}/submit", json={"answers": []}, headers=blank).status_code == 200
+    diag = _diagnostics(client, me)
+    assert diag["concepts"] == [] and diag["students_tested"] == 0 and diag["students_assessed"] == 1
+
+    # An entry submitted before answers were stored: its hits count, but it tests nothing else
+    legacy_id = _student_id(client, legacy)
+    client.portal.call(server.db.tournament_entries.update_one,
+                       {"tournament_id": contest["id"], "student_id": legacy_id},
+                       {"$set": {"score": 80, "completed_at": "2026-09-01T10:00:00+00:00",
+                                 "misconceptions": [{"question_index": 0, "selected": "x", "tag": "impetus"}]}})
+    concepts = _concepts(_diagnostics(client, me))
+    assert set(concepts) == {"impetus"}
+    assert concepts["impetus"]["holding_ids"] == concepts["impetus"]["tested_ids"] == [legacy_id]
+
+
+def test_registration_limit_is_shared_through_the_database(client, monkeypatch):
+    monkeypatch.setattr(server, "REGISTER_MAX", 2)
+    client.portal.call(server.db.register_attempts.delete_many, {})
+    body = lambda u: {"email": f"{u}@example.com", "username": u, "password": "Passw0rd!x",  # noqa: E731
+                      "full_name": u, "role": "student", "age": 15}
+    assert client.post("/api/auth/register", json=body("reg_limit_a")).status_code == 200
+    assert client.post("/api/auth/register", json=body("reg_limit_b")).status_code == 200
+    assert client.post("/api/auth/register", json=body("reg_limit_c")).status_code == 429
+    assert client.portal.call(server.db.register_attempts.count_documents, {}) == 2
+    assert not hasattr(server, "_rate_buckets")  # no per-process state left to drift between instances

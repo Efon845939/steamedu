@@ -3,10 +3,10 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo.errors import DuplicateKeyError
 import os
 import random
 import re
-import time
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr, ConfigDict
@@ -318,20 +318,20 @@ def age_group_query(age_group: Optional[str]) -> dict:
     return {}
 
 
-# ---------------- Rate limiting (in-memory sliding window) ----------------
+# ---------------- Rate limiting ----------------
+# Both limits live in Mongo (TTL-indexed), so they hold across workers and serverless instances.
 LOGIN_FAIL_MAX = 5
 LOGIN_FAIL_WINDOW = 300
-_rate_buckets = {}
+REGISTER_MAX = 50
+REGISTER_WINDOW = 600
 
 
-def _rate_limit(key: str, max_events: int, window_seconds: int) -> bool:
-    now = time.time()
-    events = [t for t in _rate_buckets.get(key, []) if now - t < window_seconds]
-    if len(events) >= max_events:
-        _rate_buckets[key] = events
+async def _registration_allowed(request: Request) -> bool:
+    key = f"reg:{_client_ip(request)}"
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=REGISTER_WINDOW)
+    if await db.register_attempts.count_documents({"key": key, "at": {"$gt": cutoff}}) >= REGISTER_MAX:
         return False
-    events.append(now)
-    _rate_buckets[key] = events
+    await db.register_attempts.insert_one({"key": key, "at": datetime.now(timezone.utc)})
     return True
 
 
@@ -343,7 +343,7 @@ def _client_ip(request: Request) -> str:
 # ---------------- Auth ----------------
 @api_router.post("/auth/register", response_model=User)
 async def register(user_data: UserCreate, request: Request):
-    if not _rate_limit(f"reg:{_client_ip(request)}", 50, 600):
+    if not await _registration_allowed(request):
         raise HTTPException(status_code=429, detail="Too many registration attempts. Please try again later.")
     if len(user_data.password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters long")
@@ -666,10 +666,35 @@ async def _update_ratings(user_id: str, challenge: dict, score: int) -> dict:
     expected = 1 / (1 + 10 ** ((difficulty - rating) / 400))
     surprise = score / 100 - expected
     delta = round(RATING_K_USER * surprise)
-    await db.users.update_one({"id": user_id}, {"$set": {"debug_rating": rating + delta}})
-    await db.arena_challenges.update_one(
-        {"id": challenge["id"]}, {"$set": {"difficulty_rating": difficulty - round(RATING_K_CHALLENGE * surprise)}})
+    # $inc, not $set: concurrent attempts on different challenges must not overwrite each other's change
+    await _inc_rating(db.users, user_id, "debug_rating", delta)
+    await _inc_rating(db.arena_challenges, challenge["id"], "difficulty_rating", -round(RATING_K_CHALLENGE * surprise))
     return {"before": rating, "after": rating + delta, "delta": delta}
+
+
+async def _inc_rating(collection, doc_id: str, field: str, delta: int):
+    if not delta:
+        return
+    res = await collection.update_one({"id": doc_id, field: {"$exists": True}}, {"$inc": {field: delta}})
+    if res.matched_count == 0:  # new users and seeded challenges start without a stored rating
+        res = await collection.update_one({"id": doc_id, field: {"$exists": False}},
+                                          {"$set": {field: RATING_START + delta}})
+        if res.matched_count == 0:  # a parallel request stored it first
+            await collection.update_one({"id": doc_id}, {"$inc": {field: delta}})
+
+
+async def _claim_first_attempt(user_id: str, challenge_id: str) -> bool:
+    """Atomically claim the one rewarded attempt per student and challenge.
+    Parallel submits all see "no attempt yet" in a plain read; only one can insert the claim."""
+    if await db.arena_attempts.find_one({"challenge_id": challenge_id, "user_id": user_id}, {"_id": 1}):
+        return False  # attempts made before claims existed
+    try:
+        res = await db.arena_firsts.update_one(
+            {"user_id": user_id, "challenge_id": challenge_id},
+            {"$setOnInsert": {"claimed_at": datetime.now(timezone.utc).isoformat()}}, upsert=True)
+    except DuplicateKeyError:
+        return False
+    return res.upserted_id is not None
 
 
 async def _reward_author(challenge_id: str, found: bool):
@@ -690,7 +715,17 @@ async def _reward_author(challenge_id: str, found: bool):
                 {"$set": {"calibrated": True, "calibrated_at": datetime.now(timezone.utc).isoformat()}})
             if res.modified_count:
                 earned += CALIBRATION_BONUS
-        await db.arena_challenges.update_one({"id": challenge_id}, {"$set": {"needs_review": rate < low}})
+        # Once a teacher has kept a low-find-rate scenario, only ask again after the solver count doubles.
+        # A re-check asked for by reports (needs_review_reason "reports") is cleared only by the teacher.
+        kept_at = challenge.get("low_rate_kept_at_solvers")
+        if rate >= low:
+            await db.arena_challenges.update_one(
+                {"id": challenge_id, "needs_review_reason": {"$ne": "reports"}},
+                {"$set": {"needs_review": False, "needs_review_reason": None}})
+        elif kept_at is None or solvers >= 2 * kept_at:
+            await db.arena_challenges.update_one(
+                {"id": challenge_id, "needs_review": {"$ne": True}},
+                {"$set": {"needs_review": True, "needs_review_reason": "low_rate"}})
     if earned:
         await db.arena_challenges.update_one({"id": challenge_id}, {"$inc": {"stats.author_points": earned}})
         await award_points(challenge["author_id"], earned, "arena_author")
@@ -718,8 +753,7 @@ async def submit_arena_attempt(challenge_id: str, data: ArenaAttemptSubmit,
     if step is not None and not step_correct:
         misconceptions.append({"tag": challenge["misconception"], "selected_step": step,
                                "source": "peer" if peer else "arena"})
-    first_attempt = await db.arena_attempts.find_one(
-        {"challenge_id": challenge_id, "user_id": current_user.id}) is None
+    first_attempt = await _claim_first_attempt(current_user.id, challenge_id)
     is_student = current_user.role == "student"
     # Public scenarios only pay authors for solvers who belong to a class, which blocks self-made alt accounts
     eligible = (peer and first_attempt and is_student
@@ -733,6 +767,8 @@ async def submit_arena_attempt(challenge_id: str, data: ArenaAttemptSubmit,
         "selected_step": step, "selected_explanation": data.selected_explanation,
         "step_correct": step_correct, "explanation_correct": explanation_correct,
         "score": score, "misconceptions": misconceptions,
+        # the tag this attempt was graded against; an author may change it later and re-submit for review
+        "misconception_tag": challenge["misconception"],
         "first_attempt": first_attempt, "eligible": eligible,
         "rating_delta": rating["delta"] if rating else None,
         # The timer is for pacing only; time never affects the score, so a client-reported value is safe to keep.
@@ -895,11 +931,14 @@ async def update_peer_challenge(challenge_id: str, data: PeerChallengeIn,
 
 @api_router.delete("/arena/peer/{challenge_id}")
 async def withdraw_peer_challenge(challenge_id: str, current_user: User = Depends(get_current_user)):
-    await _find_own_scenario(current_user, challenge_id)
+    doc = await _find_own_scenario(current_user, challenge_id)
     if await db.arena_attempts.find_one({"challenge_id": challenge_id}):
-        # Classmates' attempts still feed the teacher's diagnostics, so keep the scenario but take it down
+        # Classmates' attempts still feed the teacher's diagnostics, so keep the scenario but take it down.
+        # Remember where it was withdrawn from: only a teacher-approved scenario keeps counting.
+        withdrawn_from = doc.get("withdrawn_from") if doc["status"] == "withdrawn" else doc["status"]
         await db.arena_challenges.update_one({"id": challenge_id}, {
-            "$set": {"status": "withdrawn", "updated_at": datetime.now(timezone.utc).isoformat()}})
+            "$set": {"status": "withdrawn", "withdrawn_from": withdrawn_from,
+                     "updated_at": datetime.now(timezone.utc).isoformat()}})
         return {"deleted": False, "status": "withdrawn"}
     await db.arena_challenges.delete_one({"id": challenge_id})
     await db.arena_flags.delete_many({"challenge_id": challenge_id})
@@ -933,13 +972,25 @@ async def flag_arena_challenge(challenge_id: str, data: FlagIn, current_user: Us
         raise HTTPException(status_code=429, detail="Too many reports today")
     if await db.arena_flags.find_one({"challenge_id": challenge_id, "user_id": current_user.id}):
         raise HTTPException(status_code=409, detail="You already reported this scenario")
-    await db.arena_flags.insert_one({
-        "id": str(uuid.uuid4()), "challenge_id": challenge_id, "user_id": current_user.id,
-        "user_name": current_user.full_name, "reason": data.reason, "note": note, "resolved": False,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    })
+    in_class = bool(current_user.teacher_id) and current_user.teacher_id == challenge.get("class_teacher_id")
+    try:
+        await db.arena_flags.insert_one({
+            "id": str(uuid.uuid4()), "challenge_id": challenge_id, "user_id": current_user.id,
+            "user_name": current_user.full_name, "user_teacher_id": current_user.teacher_id, "in_class": in_class,
+            "reason": data.reason, "note": note, "resolved": False,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+    except DuplicateKeyError:  # a parallel report from the same student
+        raise HTTPException(status_code=409, detail="You already reported this scenario")
+    if not in_class:
+        # Anyone can register a throwaway account, so reports from outside the author's class never take a
+        # public scenario offline on their own. They put it in the teacher's queue instead.
+        await db.arena_challenges.update_one(
+            {"id": challenge_id, "status": "approved"},
+            {"$set": {"needs_review": True, "needs_review_reason": "reports"}})
+        return {"flagged": True, "hidden": False}
     await db.arena_challenges.update_one({"id": challenge_id}, {"$inc": {"flag_count": 1}})
-    # Enough reports take the scenario offline until the teacher looks again
+    # Enough reports from the class take the scenario offline until the teacher looks again
     res = await db.arena_challenges.update_one(
         {"id": challenge_id, "status": "approved", "flag_count": {"$gte": FLAG_HIDE_THRESHOLD}},
         {"$set": {"status": "pending", "review_reason": "flagged",
@@ -960,9 +1011,15 @@ async def get_review_queue(status: str = "queue", current_user: User = Depends(r
     docs = await db.arena_challenges.find({**mine, **filters[status]}, {"_id": 0}).sort("created_at", -1).to_list(200)
     flags = await db.arena_flags.find(
         {"challenge_id": {"$in": [d["id"] for d in docs]}, "resolved": False}, {"_id": 0}).to_list(2000)
+    # A public scenario can be reported by students the teacher has no relationship with: no names for those
+    flagger_teacher = {u["id"]: u.get("teacher_id") for u in await db.users.find(
+        {"id": {"$in": list({f["user_id"] for f in flags})}}, {"_id": 0, "id": 1, "teacher_id": 1}).to_list(None)}
     flags_by_id = {}
     for f in flags:
-        flags_by_id.setdefault(f["challenge_id"], []).append(f)
+        own = flagger_teacher.get(f["user_id"]) == current_user.id
+        flags_by_id.setdefault(f["challenge_id"], []).append({
+            "id": f["id"], "reason": f["reason"], "note": f.get("note", ""), "created_at": f.get("created_at"),
+            "in_class": own, "user_name": f.get("user_name") if own else "A student from another class"})
     counts = {
         "pending": await db.arena_challenges.count_documents({**mine, "status": "pending"}),
         "flagged": await db.arena_challenges.count_documents({**mine, "status": "pending", "review_reason": "flagged"}),
@@ -977,6 +1034,7 @@ class ReviewDecision(BaseModel):
     decision: str
     note: str = ""
     visibility: str = "class"
+    revision: Optional[int] = None  # the version the teacher read; a later edit by the author makes this stale
 
 
 @api_router.post("/teacher/arena/{challenge_id}/review")
@@ -999,19 +1057,28 @@ async def review_peer_challenge(challenge_id: str, data: ReviewDecision,
         raise HTTPException(status_code=403, detail="Only verified teachers can publish scenarios to everyone")
 
     now = datetime.now(timezone.utc).isoformat()
+    if data.revision is not None and data.revision != doc.get("revisions", 0):
+        raise HTTPException(status_code=409, detail="This scenario changed since you opened it — reload to see the new version")
     update = {"review": {"by": current_user.id, "by_name": current_user.full_name, "decision": data.decision,
                          "note": note, "at": now},
-              "needs_review": False, "updated_at": now}
+              "needs_review": False, "needs_review_reason": None, "updated_at": now}
     if data.decision == "approve":
         update.update({"status": "approved", "visibility": data.visibility, "review_reason": None,
                        "flag_count": 0, "approved_at": doc.get("approved_at") or now})
+        if doc.get("needs_review") and doc.get("needs_review_reason") != "reports":
+            update["low_rate_kept_at_solvers"] = (doc.get("stats") or {}).get("solvers", 0)
     else:
         update["status"] = "rejected"
-    # Conditional update: a second teacher (or a double click) can't review the same version twice
-    res = await db.arena_challenges.update_one(
-        {"id": challenge_id, "$or": [{"status": "pending"}, {"status": "approved", "needs_review": True}]},
-        {"$set": update})
+    # Conditional update: a second teacher (or a double click) can't review the same version twice, and an
+    # edit the author saves after the teacher opened the card can't ride on that approval
+    match = {"id": challenge_id, "$or": [{"status": "pending"}, {"status": "approved", "needs_review": True}]}
+    if data.revision is not None:
+        match["revisions"] = data.revision if data.revision else {"$in": [0, None]}  # None: field never written
+    res = await db.arena_challenges.update_one(match, {"$set": update})
     if res.modified_count == 0:
+        latest = await db.arena_challenges.find_one({"id": challenge_id}, {"_id": 0, "revisions": 1})
+        if data.revision is not None and latest and latest.get("revisions", 0) != data.revision:
+            raise HTTPException(status_code=409, detail="This scenario changed since you opened it — reload to see the new version")
         raise HTTPException(status_code=409, detail="This scenario has already been reviewed")
 
     if data.decision == "approve":
@@ -1267,10 +1334,15 @@ async def add_student(student_id: str, current_user: User = Depends(require_teac
         raise HTTPException(status_code=404, detail="Student not found")
     if student.get("teacher_id") == current_user.id:
         raise HTTPException(status_code=400, detail="Already your student")
-    await db.users.update_one(
-        {"id": student_id},
+    # A teacher can't take over another teacher's student (and with it their diagnostics and stats)
+    if student.get("teacher_id"):
+        raise HTTPException(status_code=400, detail="Student already has a teacher")
+    res = await db.users.update_one(
+        {"id": student_id, "teacher_id": None},
         {"$set": {"teacher_id": current_user.id, "teacher_name": current_user.full_name}},
     )
+    if res.modified_count == 0:  # another teacher claimed them a moment ago
+        raise HTTPException(status_code=400, detail="Student already has a teacher")
     await check_teacher_verification(current_user.id)
     student = await db.users.find_one({"id": student_id})
     return safe_user(student)
@@ -1337,6 +1409,30 @@ def _latest_per_item(records: list, user_key: str, item_key: str) -> list:
     return list(latest.values())
 
 
+def _first_answered_arena(records: list) -> list:
+    """Each student's first arena attempt per challenge that picked a step.
+    Every attempt reveals the flawed step, so a retry can't erase what the first try showed,
+    and a blank (timed-out) try carries no evidence at all."""
+    first = {}
+    for r in sorted(records, key=lambda r: str(r.get("completed_at") or "")):
+        if r.get("selected_step") is not None:
+            first.setdefault((r["user_id"], r["challenge_id"]), r)
+    return list(first.values())
+
+
+def _peer_counts_for_diagnostics(challenge: dict) -> bool:
+    """A peer scenario counts only while a teacher vouches for it: approved, or withdrawn while approved."""
+    status = challenge.get("status")
+    if status == "approved":
+        return True
+    if status != "withdrawn":
+        return False
+    if "withdrawn_from" in challenge:
+        return challenge["withdrawn_from"] == "approved"
+    # withdrawn before withdrawn_from was stored: trust it only if its last review was an approval
+    return bool(challenge.get("approved_at")) and (challenge.get("review") or {}).get("decision") != "reject"
+
+
 # Alert thresholds: a red banner needs a real sample, so "1 of 2 students = 50%" never fires one.
 DIAG_ALERT_MIN_TESTED = 5
 DIAG_ALERT_MIN_HOLDING = 3
@@ -1350,39 +1446,43 @@ def _question_tags(question: dict) -> set:
 
 @api_router.get("/teacher/diagnostics")
 async def get_class_diagnostics(include_peer: bool = True, current_user: User = Depends(require_teacher)):
-    students = await db.users.find({"teacher_id": current_user.id}, {"_id": 0, "id": 1, "full_name": 1}).to_list(500)
+    # No caps: a capped, unsorted read silently drops records (often the newest) and skews the class picture.
+    # Every query is scoped to this teacher's own roster.
+    students = await db.users.find({"teacher_id": current_user.id}, {"_id": 0, "id": 1, "full_name": 1}).to_list(None)
     names = {s["id"]: s["full_name"] for s in students}
     ids = list(names)
     fields = {"_id": 0, "misconceptions": 1, "completed_at": 1}
     quiz_attempts = await db.quiz_attempts.find(
-        {"user_id": {"$in": ids}}, {**fields, "user_id": 1, "quiz_id": 1, "answers": 1}).to_list(10000)
+        {"user_id": {"$in": ids}}, {**fields, "user_id": 1, "quiz_id": 1, "answers": 1}).to_list(None)
     arena_attempts = await db.arena_attempts.find(
-        {"user_id": {"$in": ids}}, {**fields, "user_id": 1, "challenge_id": 1, "selected_step": 1}).to_list(10000)
+        {"user_id": {"$in": ids}},
+        {**fields, "user_id": 1, "challenge_id": 1, "selected_step": 1, "misconception_tag": 1}).to_list(None)
     contest_entries = await db.tournament_entries.find(
         {"student_id": {"$in": ids}, "score": {"$ne": None}},
-        {**fields, "student_id": 1, "tournament_id": 1}).to_list(10000)
+        {**fields, "student_id": 1, "tournament_id": 1, "answers": 1}).to_list(None)
 
-    # Peer scenarios count only once a teacher has vouched for them (approved, or withdrawn after approval)
     challenges = {c["id"]: c for c in await db.arena_challenges.find(
         {"id": {"$in": list({a["challenge_id"] for a in arena_attempts})}},
-        {"_id": 0, "id": 1, "source": 1, "status": 1, "misconception": 1}).to_list(5000)}
+        {"_id": 0, "id": 1, "source": 1, "status": 1, "misconception": 1, "withdrawn_from": 1,
+         "approved_at": 1, "review": 1}).to_list(None)}
 
     def counts(attempt):
         c = challenges.get(attempt["challenge_id"])
         if c is None:
             return False
-        return not _is_peer(c) or (include_peer and c.get("status") in ("approved", "withdrawn"))
+        return not _is_peer(c) or (include_peer and _peer_counts_for_diagnostics(c))
     arena_attempts = [a for a in arena_attempts if counts(a)]
 
-    # Only each student's latest attempt per item counts, so a misconception they fixed on a retake drops off.
+    # Quizzes and contests: each student's latest record per item counts, so a misconception they fixed on a
+    # retake drops off. Arena: the first answered try counts, because every attempt reveals the answer.
     latest_quiz = _latest_per_item(quiz_attempts, "user_id", "quiz_id")
-    latest_arena = _latest_per_item(arena_attempts, "user_id", "challenge_id")
+    latest_arena = _first_answered_arena(arena_attempts)
     latest_contest = _latest_per_item(contest_entries, "student_id", "tournament_id")
     contest_quiz = {t["id"]: t["quiz_id"] for t in await db.tournaments.find(
-        {"id": {"$in": list({e["tournament_id"] for e in latest_contest})}}, {"_id": 0, "id": 1, "quiz_id": 1}).to_list(500)}
+        {"id": {"$in": list({e["tournament_id"] for e in latest_contest})}}, {"_id": 0, "id": 1, "quiz_id": 1}).to_list(None)}
     quizzes = {q["id"]: q for q in await db.quizzes.find(
         {"id": {"$in": list({a["quiz_id"] for a in latest_quiz} | set(contest_quiz.values()))}},
-        {"_id": 0, "id": 1, "questions": 1}).to_list(500)}
+        {"_id": 0, "id": 1, "questions": 1}).to_list(None)}
 
     # tested[tag]: students who answered something that could reveal the tag; holding[tag]: those who showed it
     tested, holding, occurrences, peer_occurrences = {}, {}, {}, {}
@@ -1399,24 +1499,23 @@ async def get_class_diagnostics(include_peer: bool = True, current_user: User = 
             if hit.get("source") == "peer":
                 peer_occurrences[tag] = peer_occurrences.get(tag, 0) + 1
 
+    def mark_answered(quiz, answers, uid):
+        # A question tests its tags only if the student actually picked one of its options
+        for question, answer in zip((quiz or {}).get("questions", []), answers or []):
+            if isinstance(answer, dict) and isinstance(answer.get("selected"), str) \
+                    and answer["selected"] in question.get("options", []):
+                for tag in _question_tags(question):
+                    mark_tested(tag, uid)
+
     for a in latest_quiz:
-        quiz = quizzes.get(a["quiz_id"])
-        if quiz:
-            for question, answer in zip(quiz["questions"], a.get("answers") or []):
-                if isinstance(answer.get("selected"), str) and answer["selected"] in question.get("options", []):
-                    for tag in _question_tags(question):
-                        mark_tested(tag, a["user_id"])
+        mark_answered(quizzes.get(a["quiz_id"]), a.get("answers"), a["user_id"])
         record_hits(a["user_id"], a)
-    for a in latest_arena:
-        if a.get("selected_step") is not None:  # a timed-out blank attempt tests nothing
-            mark_tested(challenges[a["challenge_id"]]["misconception"], a["user_id"])
+    for a in latest_arena:  # only answered tries are kept, so each one tests its tag
+        mark_tested(a.get("misconception_tag") or challenges[a["challenge_id"]]["misconception"], a["user_id"])
         record_hits(a["user_id"], a)
     for e in latest_contest:
-        # Contest entries keep no answers; the contest UI makes students answer every question
-        quiz = quizzes.get(contest_quiz.get(e["tournament_id"]))
-        for question in (quiz or {}).get("questions", []):
-            for tag in _question_tags(question):
-                mark_tested(tag, e["student_id"])
+        # Entries submitted before answers were stored test nothing; their recorded hits still count
+        mark_answered(quizzes.get(contest_quiz.get(e["tournament_id"])), e.get("answers"), e["student_id"])
         record_hits(e["student_id"], e)
 
     # "Assessed" = took something that can reveal a misconception (diagnostic quiz, arena, or contest on one)
@@ -1649,7 +1748,7 @@ async def complete_challenge(challenge_id: str, current_user: User = Depends(get
 
 # ---------------- Tournaments ----------------
 # Misconception tags are teacher-only diagnostics and hint at the answer key, so rankings never include them.
-_PUBLIC_ENTRY_FIELDS = {"_id": 0, "misconceptions": 0}
+_PUBLIC_ENTRY_FIELDS = {"_id": 0, "misconceptions": 0, "answers": 0}
 
 
 def _tournament_status(t: dict) -> str:
@@ -1792,11 +1891,15 @@ async def submit_tournament(tournament_id: str, attempt_data: AttemptSubmit, cur
         raise HTTPException(status_code=404, detail="Tournament quiz not found")
     answers = [a.dict() for a in attempt_data.answers]
     score = _grade(quiz, answers)
-    await db.tournament_entries.update_one(
-        {"id": entry["id"]},
-        {"$set": {"score": score, "misconceptions": _collect_misconceptions(quiz, answers),
+    # Answers are kept (never shown to other entrants) so diagnostics know which concepts were really tested.
+    # Matching on score None makes the one-shot submit hold under parallel requests.
+    res = await db.tournament_entries.update_one(
+        {"id": entry["id"], "score": None},
+        {"$set": {"score": score, "answers": answers, "misconceptions": _collect_misconceptions(quiz, answers),
                   "completed_at": datetime.now(timezone.utc).isoformat()}},
     )
+    if res.modified_count == 0:
+        raise HTTPException(status_code=400, detail="You already submitted your attempt")
     await award_points(current_user.id, TOURNAMENT_POINTS, "contest")
     streak = await touch_streak(current_user.id)
     better = await db.tournament_entries.count_documents(
@@ -2196,6 +2299,9 @@ async def ensure_indexes():
         (db.users, [("teacher_id", 1)], {}),
         (db.login_failures, [("at", 1)], {"expireAfterSeconds": LOGIN_FAIL_WINDOW}),
         (db.login_failures, [("key", 1)], {}),
+        (db.register_attempts, [("at", 1)], {"expireAfterSeconds": REGISTER_WINDOW}),
+        (db.register_attempts, [("key", 1)], {}),
+        (db.arena_firsts, [("user_id", 1), ("challenge_id", 1)], {"unique": True}),
     ]
     for collection, keys, opts in specs:
         try:
