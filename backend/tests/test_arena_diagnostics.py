@@ -138,6 +138,22 @@ def test_seed_arena_challenges_are_valid():
     assert all(m["subject"] in server.SUBJECTS for m in MISCONCEPTIONS.values())
 
 
+def test_seed_arena_answers_cant_be_guessed_from_form():
+    """A blind guess must not beat the content: otherwise the heatmap measures test-taking, not misconceptions."""
+    n = len(ARENA_CHALLENGES)
+    longest = sum(1 for c in ARENA_CHALLENGES
+                  if len(c["correct_explanation"]) > max(len(e) for e in c["explanations"] if e != c["correct_explanation"]))
+    assert longest <= n // 2, "the right explanation is too often the longest one"
+    for c in ARENA_CHALLENGES:
+        shortest = min(len(e) for e in c["explanations"])
+        assert len(c["correct_explanation"]) <= 1.2 * shortest, c["title"]
+    for position in ("first", "last", "second-to-last"):
+        idx = {"first": lambda c: 0, "last": lambda c: len(c["steps"]) - 1,
+               "second-to-last": lambda c: len(c["steps"]) - 2}[position]
+        hits = sum(1 for c in ARENA_CHALLENGES if c["flawed_step"] == idx(c))
+        assert hits <= n // 2, f"the flawed step is the {position} step too often"
+
+
 # ---------------- Arena ----------------
 def test_arena_requires_login_and_hides_answers(client, teacher, arena):
     assert client.get("/api/arena/challenges").status_code in (401, 403)
