@@ -25,6 +25,8 @@ const TeacherDashboard = ({ stats, refreshStats }) => {
   const [tournaments, setTournaments] = useState([]);
   const [quizzes, setQuizzes] = useState([]);
   const [loaded, setLoaded] = useState(false);
+  const [quizzesLoaded, setQuizzesLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [seeding, setSeeding] = useState(false);
   const [challengeOpen, setChallengeOpen] = useState(false);
   const [tournamentOpen, setTournamentOpen] = useState(false);
@@ -34,22 +36,22 @@ const TeacherDashboard = ({ stats, refreshStats }) => {
   const [newTournament, setNewTournament] = useState({ title: '', description: '', subject: 'Science', age_group: 'all', scope: 'class', quiz_id: '', duration_days: 7 });
 
   const fetchAll = useCallback(async () => {
-    try {
-      const [stRes, chRes, tRes, qRes] = await Promise.all([
-        axios.get(`${API}/teacher/students`),
-        axios.get(`${API}/challenges/mine`),
-        axios.get(`${API}/tournaments`),
-        axios.get(`${API}/quizzes`),
-      ]);
-      setStudents(stRes.data);
-      setChallenges(chRes.data);
-      setTournaments(tRes.data.filter((t) => t.teacher_id === user.id));
-      setQuizzes(qRes.data);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoaded(true);
-    }
+    // Each request stands alone: one slow or failed call must not make the catalogue look empty
+    const [stRes, chRes, tRes, qRes] = await Promise.allSettled([
+      axios.get(`${API}/teacher/students`),
+      axios.get(`${API}/challenges/mine`),
+      axios.get(`${API}/tournaments`),
+      axios.get(`${API}/quizzes`),
+    ]);
+    if (stRes.status === 'fulfilled') setStudents(stRes.value.data);
+    if (chRes.status === 'fulfilled') setChallenges(chRes.value.data);
+    if (tRes.status === 'fulfilled') setTournaments(tRes.value.data.filter((t) => t.teacher_id === user.id));
+    if (qRes.status === 'fulfilled') setQuizzes(qRes.value.data);
+    const failed = [stRes, chRes, tRes, qRes].filter((r) => r.status === 'rejected');
+    failed.forEach((r) => console.error(r.reason));
+    setLoadError(failed.length > 0);
+    setQuizzesLoaded(qRes.status === 'fulfilled');
+    setLoaded(true);
   }, [API, user.id]);
 
   useEffect(() => {
@@ -206,7 +208,16 @@ const TeacherDashboard = ({ stats, refreshStats }) => {
           ))}
         </div>
 
-        {loaded && quizzes.length === 0 && (
+        {loaded && loadError && (
+          <div role="alert" className="mb-8 flex flex-col gap-3 rounded-lg border-2 border-red-200 bg-red-50 p-4 text-sm text-red-900 sm:flex-row sm:items-center sm:justify-between" data-testid="dashboard-load-error">
+            <span>Some of your dashboard didn't load. Check your connection and try again.</span>
+            <Button variant="outline" onClick={fetchAll} className="border-red-300 text-red-800" data-testid="dashboard-retry-btn">
+              Retry
+            </Button>
+          </div>
+        )}
+
+        {quizzesLoaded && quizzes.length === 0 && (
           <Card className="bg-amber-50 border-2 border-amber-200 mb-8" data-testid="starter-content-card">
             <CardHeader>
               <CardTitle className="text-lg">No learning content yet</CardTitle>

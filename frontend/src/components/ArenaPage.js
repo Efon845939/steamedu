@@ -232,9 +232,14 @@ const ArenaPage = () => {
 
   const handleNext = useCallback(() => {
     if (!nextChallenge) return;
-    clearDeepLink();
+    if (id) {
+      // The route boundary remounts the page when the path changes, so starting the challenge here would be
+      // lost. Point the deep link at the next challenge instead; the remounted page auto-starts it.
+      navigate({ pathname: `/arena/${nextChallenge.id}`, search: searchParams.toString() }, { replace: true });
+      return;
+    }
     startChallenge(nextChallenge);
-  }, [nextChallenge, clearDeepLink, startChallenge]);
+  }, [nextChallenge, id, navigate, searchParams, startChallenge]);
 
   if (loading) {
     return (

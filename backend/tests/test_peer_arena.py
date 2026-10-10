@@ -59,9 +59,9 @@ def client():
 
 
 @pytest.fixture(autouse=True)
-def _no_registration_rate_limit():
-    # Every TestClient request comes from one IP, so the in-memory registration limit would trip
-    server._rate_buckets.clear()
+def _no_registration_rate_limit(client):
+    # Every TestClient request comes from one IP, so the registration limit would trip
+    client.portal.call(server.db.register_attempts.delete_many, {})
 
 
 @pytest.fixture(scope="module")
@@ -501,3 +501,218 @@ def test_bug_hunter_badge_counts_first_tries_only(client, seeded):
     badges = client.get("/api/badges", headers=student).json()
     assert badges["total"] == 14
     assert not next(b for b in badges["badges"] if b["key"] == "bug_hunter")["earned"]
+
+
+# ---------------- Health-check regressions ----------------
+def _flag(client, headers, cid, reason="inappropriate", note=""):
+    return client.post(f"/api/arena/challenges/{cid}/flag", headers=headers, json={"reason": reason, "note": note})
+
+
+def _queue_item(client, teacher, cid):
+    return next((s for s in client.get("/api/teacher/arena/review", headers=teacher).json()["scenarios"]
+                 if s["id"] == cid), None)
+
+
+def _diag_row(client, teacher, tag, key="misconceptions"):
+    diag = client.get("/api/teacher/diagnostics", headers=teacher).json()
+    return next((r for r in diag[key] if r["tag"] == tag), None)
+
+
+def test_approval_only_covers_the_version_the_teacher_read(client):
+    teacher, (author, classmate) = _class(client, 2)
+    doc = _created(client, author)
+    seen = _queue_item(client, teacher, doc["id"])
+    assert seen["revisions"] == 0
+    assert client.put(f"/api/arena/peer/{doc['id']}", headers=author,
+                      json={**VALID, "title": "Edited after the teacher looked"}).status_code == 200
+
+    r = client.post(f"/api/teacher/arena/{doc['id']}/review", headers=teacher,
+                    json={"decision": "approve", "visibility": "class", "revision": seen["revisions"]})
+    assert r.status_code == 409 and "changed" in r.json()["detail"]
+    assert doc["id"] not in _visible_ids(client, classmate)
+
+    fresh = _queue_item(client, teacher, doc["id"])
+    r = client.post(f"/api/teacher/arena/{doc['id']}/review", headers=teacher,
+                    json={"decision": "approve", "visibility": "class", "revision": fresh["revisions"]})
+    assert r.status_code == 200 and r.json()["title"] == "Edited after the teacher looked"
+    assert doc["id"] in _visible_ids(client, classmate)
+
+
+def test_rejected_scenario_stays_out_of_diagnostics_after_withdrawal(client):
+    teacher, (author, a, b, c) = _class(client, 4)
+    doc = _live(client, teacher, author)
+    hidden = []
+    for h in (a, b, c):
+        _solve(client, h, doc["id"], found=False)
+        hidden.append(_flag(client, h, doc["id"], reason="wrong_answer").json()["hidden"])
+    assert hidden == [False, False, True]
+    assert _review(client, teacher, doc["id"], decision="reject", note="The answer key is wrong").status_code == 200
+    assert _diag_row(client, teacher, "heavier-falls-faster") is None
+    assert client.delete(f"/api/arena/peer/{doc['id']}", headers=author).json()["status"] == "withdrawn"
+    assert _mine(client, author, doc["id"])["withdrawn_from"] == "rejected"
+    assert _diag_row(client, teacher, "heavier-falls-faster") is None
+
+    # Withdrawn while approved: the teacher vouched for it, so the misses keep counting
+    teacher2, (author2, d) = _class(client, 2)
+    doc2 = _live(client, teacher2, author2)
+    _solve(client, d, doc2["id"], found=False)
+    assert client.delete(f"/api/arena/peer/{doc2['id']}", headers=author2).json()["status"] == "withdrawn"
+    assert _diag_row(client, teacher2, "heavier-falls-faster")["students"] == 1
+
+
+def test_old_attempts_keep_the_tag_they_were_graded_on(client):
+    teacher, (author, finder, *missers) = _class(client, 5)
+    doc = _live(client, teacher, author)
+    _solve(client, finder, doc["id"])
+    for h in missers:
+        _solve(client, h, doc["id"], found=False)
+        _flag(client, h, doc["id"], reason="wrong_answer")
+    assert _mine(client, author, doc["id"])["status"] == "pending"  # flagged offline
+    assert client.put(f"/api/arena/peer/{doc['id']}", headers=author,
+                      json={**VALID, "misconception": "impetus"}).status_code == 200
+    assert _review(client, teacher, doc["id"]).status_code == 200
+
+    assert _diag_row(client, teacher, "impetus", key="concepts") is None  # nobody ever saw the impetus version
+    old = _diag_row(client, teacher, "heavier-falls-faster", key="concepts")
+    assert old["tested_count"] == 4 and old["holding_count"] == 3
+
+
+def test_reports_from_outside_the_class_queue_a_public_scenario_but_never_hide_it(client):
+    teacher, (author, classmate) = _class(client, verified=True)
+    doc = _created(client, author)
+    assert _review(client, teacher, doc["id"], visibility="public").status_code == 200
+    _, (other_class_kid,) = _class(client)
+    outsiders = [_register(client, _name("griefer")) for _ in range(3)] + [other_class_kid]
+    for h in outsiders:
+        assert _flag(client, h, doc["id"]).json() == {"flagged": True, "hidden": False}
+    assert doc["id"] in _visible_ids(client, classmate)
+    mine = _mine(client, author, doc["id"])
+    assert mine["status"] == "approved" and mine["flag_count"] == 0
+    assert mine["needs_review"] is True and mine["needs_review_reasons"] == ["reports"]
+
+    assert _flag(client, classmate, doc["id"], note="Rude word in step 2").json()["hidden"] is False
+    item = _queue_item(client, teacher, doc["id"])
+    names = sorted(f["user_name"] for f in item["open_flags"])
+    assert names == sorted(["A student from another class"] * 4 + [_me(client, classmate)["full_name"]])
+    assert all("user_id" not in f for f in item["open_flags"])
+
+    _solve(client, classmate, doc["id"])  # a solve must not clear a re-check asked for by reports
+    assert _mine(client, author, doc["id"])["needs_review"] is True
+    assert _review(client, teacher, doc["id"], visibility="public").status_code == 200
+    mine = _mine(client, author, doc["id"])
+    assert mine["needs_review"] is False and mine["needs_review_reasons"] == []
+
+
+def test_keeping_a_low_find_rate_scenario_sticks_until_solvers_double(client):
+    teacher, (author, *solvers) = _class(client, 11)
+    doc = _live(client, teacher, author)
+    for solver in solvers[:5]:
+        _solve(client, solver, doc["id"], found=False)
+    assert _mine(client, author, doc["id"])["needs_review"] is True
+    assert _review(client, teacher, doc["id"]).status_code == 200  # the teacher keeps it
+    for solver in solvers[5:9]:
+        _solve(client, solver, doc["id"], found=False)
+        assert _mine(client, author, doc["id"])["needs_review"] is False
+    _solve(client, solvers[9], doc["id"], found=False)  # 10 solvers: twice as many as when it was kept
+    assert _mine(client, author, doc["id"])["needs_review"] is True
+
+
+def test_teacher_can_re_review_a_scenario_flagged_for_a_check(client):
+    teacher, (author, *solvers) = _class(client, 6)
+    doc = _live(client, teacher, author)
+    for solver in solvers:
+        _solve(client, solver, doc["id"], found=False)
+    r = _review(client, teacher, doc["id"], decision="reject", note="Nobody can find the bug; clarify step 2.")
+    assert r.status_code == 200 and r.json()["status"] == "rejected" and r.json()["needs_review"] is False
+    assert _queue_item(client, teacher, doc["id"]) is None
+    assert doc["id"] not in _visible_ids(client, solvers[0])
+
+
+def test_public_scenarios_pay_authors_only_for_solvers_in_a_class(client):
+    verified, (author, classmate) = _class(client, verified=True)
+    doc = _created(client, author)
+    assert _review(client, verified, doc["id"], visibility="public").status_code == 200
+    loner = _register(client, _name("alt"))
+    assert _solve(client, loner, doc["id"])["eligible"] is False
+    mine = _mine(client, author, doc["id"])
+    assert mine["stats"]["author_points"] == server.AUTHOR_APPROVAL_POINTS and mine["stats"]["solvers"] == 0
+    assert _solve(client, classmate, doc["id"])["eligible"] is True
+    assert _mine(client, author, doc["id"])["stats"]["author_points"] == \
+        server.AUTHOR_APPROVAL_POINTS + server.AUTHOR_SOLVER_POINTS
+
+
+def test_resubmitting_a_rejected_scenario_respects_the_pending_cap(client):
+    teacher, (author,) = _class(client)
+    rejected = _created(client, author)
+    assert _review(client, teacher, rejected["id"], decision="reject", note="fix it").status_code == 200
+    for _ in range(server.PEER_MAX_PENDING):
+        _created(client, author)
+    assert client.put(f"/api/arena/peer/{rejected['id']}", headers=author, json=VALID).status_code == 429
+    assert _mine(client, author, rejected["id"])["status"] == "rejected"
+
+
+def test_daily_report_limit(client, monkeypatch):
+    monkeypatch.setattr(server, "FLAG_DAILY_LIMIT", 1)
+    teacher, (author, classmate) = _class(client, 2)
+    first, second = _live(client, teacher, author), _live(client, teacher, author)
+    assert _flag(client, classmate, first["id"]).status_code == 200
+    r = _flag(client, classmate, second["id"])
+    assert r.status_code == 429 and r.json()["detail"] == "Too many reports today"
+    assert _mine(client, author, second["id"])["flag_count"] == 0
+
+
+def test_worksheet_letters_are_the_same_on_every_print(client, seeded):
+    teacher, _ = _class(client)
+    ids = ",".join(seeded[c["title"]] for c in ARENA_CHALLENGES[:4])
+    first, again = (client.get("/api/teacher/worksheet", params={"ids": ids}, headers=teacher).json() for _ in range(2))
+    assert [i["explanations"] for i in first["items"]] == [i["explanations"] for i in again["items"]]
+    assert [k["correct_letter"] for k in first["answer_key"]] == [k["correct_letter"] for k in again["answer_key"]]
+
+
+def test_a_keep_covers_low_find_rate_and_outside_reports_together(client):
+    teacher, (author, *solvers) = _class(client, 7, verified=True)
+    doc = _created(client, author)
+    assert _review(client, teacher, doc["id"], visibility="public").status_code == 200
+    for solver in solvers[:5]:
+        _solve(client, solver, doc["id"], found=False)
+    assert _mine(client, author, doc["id"])["needs_review_reasons"] == ["low_rate"]
+    assert _flag(client, _register(client, _name("outsider")), doc["id"]).json()["hidden"] is False
+    assert _mine(client, author, doc["id"])["needs_review_reasons"] == ["low_rate", "reports"]
+
+    assert _review(client, teacher, doc["id"], visibility="public").status_code == 200  # read both, kept it
+    mine = _mine(client, author, doc["id"])
+    assert mine["needs_review"] is False and mine["low_rate_kept_at_solvers"] == 5
+    _solve(client, solvers[5], doc["id"], found=False)
+    assert _mine(client, author, doc["id"])["needs_review"] is False  # not back after one more solver
+
+
+def test_withdrawing_again_changes_nothing_and_legacy_withdrawals_count_only_if_live(client):
+    teacher, (author, a, b) = _class(client, 3)
+    live, flagged = _live(client, teacher, author), _live(client, teacher, author, title="Second falling ball")
+    for doc in (live, flagged):
+        _solve(client, a, doc["id"], found=False)
+    # Simulate scenarios withdrawn before withdrawn_from existed: one pulled while live, one after reports
+    legacy = {"status": "withdrawn"}
+    client.portal.call(server.db.arena_challenges.update_one, {"id": live["id"]}, {"$set": legacy})
+    client.portal.call(server.db.arena_challenges.update_one, {"id": flagged["id"]},
+                       {"$set": {**legacy, "review_reason": "flagged"}})
+    assert _diag_row(client, teacher, "heavier-falls-faster")["occurrences"] == 1  # only the live one
+
+    assert client.delete(f"/api/arena/peer/{live['id']}", headers=author).json()["status"] == "withdrawn"
+    assert "withdrawn_from" not in _mine(client, author, live["id"])
+    assert _diag_row(client, teacher, "heavier-falls-faster")["occurrences"] == 1
+
+
+def test_reports_filed_before_in_class_existed_cannot_tip_a_public_scenario_offline(client):
+    teacher, (author, classmate) = _class(client, verified=True)
+    doc = _created(client, author)
+    assert _review(client, teacher, doc["id"], visibility="public").status_code == 200
+    for _ in range(server.FLAG_HIDE_THRESHOLD - 1):  # old-style reports from outside the class
+        outsider_id = _me(client, _register(client, _name("old_outsider")))["id"]
+        client.portal.call(server.db.arena_flags.insert_one, {
+            "id": str(uuid.uuid4()), "challenge_id": doc["id"], "user_id": outsider_id, "user_name": "x",
+            "reason": "inappropriate", "note": "", "resolved": False, "created_at": "2026-09-01T10:00:00+00:00"})
+    client.portal.call(server.db.arena_challenges.update_one, {"id": doc["id"]},
+                       {"$set": {"flag_count": server.FLAG_HIDE_THRESHOLD - 1}})
+    assert _flag(client, classmate, doc["id"]).json()["hidden"] is False
+    assert doc["id"] in _visible_ids(client, classmate)

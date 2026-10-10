@@ -470,7 +470,7 @@ ARENA_CHALLENGES = [
         "flawed_step": 1,
         "correct_explanation": "The 20% discount is taken from the new price of $120, so it removes $24, not $20: 120 × 0.80 = $96.",
         "misconception": "percent-change-symmetric",
-        "debrief": "Each percentage is applied to the current price. 20% of $120 is $24, so the sale price is $96. In general, a p% rise then a p% cut multiplies the price by (1 + p)(1 − p) = 1 − p², which is always less than 1.",
+        "debrief": "Each percentage is applied to the current price. 20% of $120 is $24, so the sale price is $96. In general, a p% rise then a p% cut multiplies the price by (1 + p/100)(1 − p/100) = 1 − (p/100)², which is less than 1 for any p > 0 (here 1.2 × 0.8 = 0.96).",
     },
 ]
 

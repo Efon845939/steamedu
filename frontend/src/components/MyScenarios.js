@@ -214,8 +214,9 @@ const ScenarioCard = ({ scenario: s, onEdit, onWithdraw, editBlockedReason }) =>
             data-testid={`scenario-needs-review-${s.id}`}
           >
             <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" aria-hidden="true" />
-            Fewer than 1 in 5 classmates found the bug, so your teacher has been asked to double-check it. Scenarios
-            that are almost impossible to solve don't earn the bonus.
+            {(s.needs_review_reasons || []).includes('reports') && !(s.needs_review_reasons || []).includes('low_rate')
+              ? 'Someone reported a possible problem, so your teacher has been asked to take another look. It stays visible meanwhile.'
+              : "Fewer than 1 in 5 classmates found the bug, so your teacher has been asked to double-check it. Scenarios that are almost impossible to solve don't earn the bonus."}
           </p>
         )}
 
