@@ -8,8 +8,9 @@ import { Label } from './ui/label';
 import { formatApiError } from '../lib/steam';
 import { FileDown, ClipboardList, ShieldCheck } from 'lucide-react';
 
-// 0.42 -> "42%", null (withheld) -> "—"
-const pctOrDash = (cell) => (cell && cell.rate !== null && cell.rate !== undefined ? `${Math.round(cell.rate * 100)}%` : '—');
+// 0.42 -> "42% (3/7)", withheld -> "<5"
+const pctOrDash = (cell) => (cell && cell.rate !== null && cell.rate !== undefined
+  ? `${Math.round(cell.rate * 100)}% (${cell.holding}/${cell.tested})` : '<5');
 
 // Anonymized class report for a pilot: misconception rates before and after the day you re-taught
 export const PilotReport = () => {
@@ -106,7 +107,7 @@ export const PilotReport = () => {
         </div>
         <p className="flex items-start gap-2 text-xs text-gray-600">
           <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" aria-hidden="true" />
-          No student names or ids leave the app. Numbers from fewer than 5 students are left blank.
+          No student names or ids leave the app. Numbers from fewer than 5 students show as &lt;5.
         </p>
         {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
 
@@ -143,20 +144,20 @@ export const PilotReport = () => {
                         <td className="py-2 pr-3">{r.description}</td>
                         {hasSplit ? (
                           <>
-                            <td className="py-2 pr-3">{pctOrDash(r.before)} <span className="text-gray-400">({r.before.tested})</span></td>
-                            <td className="py-2 pr-3">{pctOrDash(r.after)} <span className="text-gray-400">({r.after.tested})</span></td>
+                            <td className="py-2 pr-3">{pctOrDash(r.before)}</td>
+                            <td className="py-2 pr-3">{pctOrDash(r.after)}</td>
                             <td className="py-2 pr-3">
-                              {r.paired.fixed === null ? '—' : `${r.paired.fixed} of ${r.paired.held_before}`}
+                              {r.paired.fixed === null ? '<5' : `${r.paired.fixed} of ${r.paired.held_before}`}
                             </td>
                           </>
                         ) : (
-                          <td className="py-2 pr-3">{pctOrDash(r.overall)} <span className="text-gray-400">({r.overall.tested})</span></td>
+                          <td className="py-2 pr-3">{pctOrDash(r.overall)}</td>
                         )}
                       </tr>
                     ))}
                   </tbody>
                 </table>
-                <p className="mt-2 text-xs text-gray-500">Brackets: students tested. — means too few students to show.</p>
+                <p className="mt-2 text-xs text-gray-500">Brackets: holding / tested. &lt;5 means too few students to show.</p>
               </div>
             )}
           </div>

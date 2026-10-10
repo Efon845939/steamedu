@@ -148,7 +148,7 @@ def test_csv_export_downloads_the_same_numbers(client, seeded):
     head = next(row for row in rows if row and row[0] == "tag")
     line = dict(zip(head, next(row for row in rows if row and row[0] == TAG)))
     assert line["before_tested"] == "5" and line["before_holding"] == "5" and line["before_rate"] == "1.0"
-    assert line["after_tested"] == "0" and line["after_holding"] == ""  # nobody measured after: withheld, not 0%
+    assert line["after_tested"] == "0" and line["after_holding"] == "<5"  # nobody measured after: withheld, not 0%
 
 
 def test_small_groups_are_withheld(client, seeded):

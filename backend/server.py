@@ -1654,7 +1654,7 @@ def _pilot_cell(tested: set, holding: set) -> dict:
 
 
 def _csv_blank(value):
-    return "" if value is None else value
+    return f"<{PILOT_MIN_CELL}" if value is None else value
 
 
 def _pilot_window(ev: dict) -> dict:
@@ -1706,7 +1706,7 @@ async def get_pilot_report(start: Optional[str] = None, split: Optional[str] = N
             "holding": "tested students whose answer showed the misconception (a quiz retake that fixes it clears it)",
             "rate": "holding / tested",
             "paired": "only students tested both before and after split; fixed = held before, not after",
-            "withheld": f"counts from fewer than {PILOT_MIN_CELL} students are left blank to protect students",
+            "withheld": f"counts from fewer than {PILOT_MIN_CELL} students are null (\"<{PILOT_MIN_CELL}\" in CSV) to protect students",
         },
     }
     if format == "json":
@@ -1738,7 +1738,7 @@ async def get_pilot_report(start: Optional[str] = None, split: Optional[str] = N
             line += [_csv_blank(r["paired"][k]) for k in ("students", "held_before", "held_after", "fixed", "newly_holding")]
         w.writerow(line)
     w.writerow([])
-    w.writerow([f"Blank cells: fewer than {PILOT_MIN_CELL} students, withheld to protect students."])
+    w.writerow([f"<{PILOT_MIN_CELL}: fewer than {PILOT_MIN_CELL} students, withheld to protect students."])
     name = f"steamedu-pilot-report-{(start or 'all')}-to-{(end or 'now')}.csv"
     return Response(content=out.getvalue(), media_type="text/csv",
                     headers={"Content-Disposition": f'attachment; filename="{name}"'})
