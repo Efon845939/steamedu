@@ -90,6 +90,7 @@ class Quiz(BaseModel):
     subject: str = "General"
     age_groups: List[str] = ["all"]
     diagnostic: bool = False
+    tr: Optional[dict] = None  # Turkish title/description; questions carry their own "tr"
     questions: List[dict]
     created_by: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -432,6 +433,7 @@ class QuizAnswer(BaseModel):
     model_config = ConfigDict(extra="ignore")
     question_index: Optional[int] = None
     selected: Optional[Any] = None
+    confident: Optional[bool] = None  # False = the student said they guessed; None = not asked
 
 
 class AttemptSubmit(BaseModel):
@@ -447,14 +449,19 @@ def _grade(quiz: dict, answers: list) -> int:
     return int((correct / total) * 100) if total else 0
 
 
-def _collect_misconceptions(quiz: dict, answers: list) -> list:
-    """Map each wrong answer whose option is tagged to its misconception tag."""
+def _is_guess(answer: dict) -> bool:
+    return answer.get("confident") is False
+
+
+def _collect_misconceptions(quiz: dict, answers: list, guesses: bool = False) -> list:
+    """Map each wrong answer whose option is tagged to its misconception tag. A wrong answer the student
+    marked as a guess shows no belief, so it is left out (or, with guesses=True, is the only thing kept)."""
     found = []
     questions = quiz["questions"]
     for i, answer in enumerate(answers[:len(questions)]):
         question = questions[i]
         selected = answer.get("selected")
-        if selected == question.get("correct_answer"):
+        if selected == question.get("correct_answer") or _is_guess(answer) != guesses:
             continue
         tag = (question.get("misconceptions") or {}).get(selected) if isinstance(selected, str) else None
         if tag:
@@ -471,13 +478,14 @@ async def submit_quiz_attempt(quiz_id: str, attempt_data: AttemptSubmit, current
     answers = [a.dict() for a in attempt_data.answers]
     score = _grade(quiz, answers)
     misconceptions = _collect_misconceptions(quiz, answers)
+    guessed = _collect_misconceptions(quiz, answers, guesses=True)
     first_attempt = await db.quiz_attempts.find_one({"quiz_id": quiz_id, "user_id": current_user.id}) is None
 
     attempt = {
         "id": str(uuid.uuid4()), "quiz_id": quiz_id, "user_id": current_user.id,
         "quiz_title": quiz["title"], "subject": quiz.get("subject", "General"),
         "answers": answers, "score": score, "misconceptions": misconceptions,
-        "completed_at": datetime.now(timezone.utc).isoformat(),
+        "guessed_misconceptions": guessed, "completed_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.quiz_attempts.insert_one(attempt)
 
@@ -568,7 +576,8 @@ def _author_view(challenge: dict) -> dict:
 
 def _misconception_info(tag: str) -> dict:
     entry = MISCONCEPTIONS.get(tag, {})
-    return {"tag": tag, "subject": entry.get("subject"), "description": entry.get("description", tag)}
+    return {"tag": tag, "subject": entry.get("subject"), "description": entry.get("description", tag),
+            "description_tr": entry.get("description_tr")}
 
 
 def _arena_visibility(user: User) -> dict:
@@ -1540,7 +1549,8 @@ async def get_class_diagnostics(include_peer: bool = True, current_user: User = 
     def mark_answered(quiz, answers, uid):
         # A question tests its tags only if the student actually picked one of its options
         for question, answer in zip((quiz or {}).get("questions", []), answers or []):
-            if isinstance(answer, dict) and isinstance(answer.get("selected"), str) \
+            # A self-reported guess tests nothing: counting it would dilute the rate without showing a belief
+            if isinstance(answer, dict) and isinstance(answer.get("selected"), str) and not _is_guess(answer) \
                     and answer["selected"] in question.get("options", []):
                 for tag in _question_tags(question):
                     mark_tested(tag, uid)
@@ -1592,7 +1602,7 @@ async def get_class_diagnostics(include_peer: bool = True, current_user: User = 
             level = "watch"
         else:
             continue
-        alerts.append({k: r[k] for k in ("tag", "subject", "description", "holding_count", "tested_count", "rate")}
+        alerts.append({k: r[k] for k in ("tag", "subject", "description", "description_tr", "holding_count", "tested_count", "rate")}
                       | {"level": level})
     roster = sorted(({"id": s["id"], "name": s["full_name"],
                       "tested_count": sum(1 for members in tested.values() if s["id"] in members),
