@@ -394,15 +394,18 @@ def test_contests_test_only_the_concepts_a_student_answered(client, diagnostic_q
     diag = _diagnostics(client, me)
     assert diag["concepts"] == [] and diag["students_tested"] == 0 and diag["students_assessed"] == 1
 
-    # An entry submitted before answers were stored: its hits count, but it tests nothing else
+    # An entry submitted before answers were stored: the old contest UI forced an answer to every
+    # question, so it tests every concept (counting only its hits would read as a 100% rate)
     legacy_id = _student_id(client, legacy)
     client.portal.call(server.db.tournament_entries.update_one,
                        {"tournament_id": contest["id"], "student_id": legacy_id},
                        {"$set": {"score": 80, "completed_at": "2026-09-01T10:00:00+00:00",
                                  "misconceptions": [{"question_index": 0, "selected": "x", "tag": "impetus"}]}})
     concepts = _concepts(_diagnostics(client, me))
-    assert set(concepts) == {"impetus"}
-    assert concepts["impetus"]["holding_ids"] == concepts["impetus"]["tested_ids"] == [legacy_id]
+    assert set(concepts) == _quiz_tags()
+    assert all(r["tested_ids"] == [legacy_id] for r in concepts.values())
+    assert concepts["impetus"]["holding_ids"] == [legacy_id]
+    assert all(r["holding_count"] == 0 for tag, r in concepts.items() if tag != "impetus")
 
 
 def test_registration_limit_is_shared_through_the_database(client, monkeypatch):
@@ -413,5 +416,33 @@ def test_registration_limit_is_shared_through_the_database(client, monkeypatch):
     assert client.post("/api/auth/register", json=body("reg_limit_a")).status_code == 200
     assert client.post("/api/auth/register", json=body("reg_limit_b")).status_code == 200
     assert client.post("/api/auth/register", json=body("reg_limit_c")).status_code == 429
-    assert client.portal.call(server.db.register_attempts.count_documents, {}) == 2
+    assert client.portal.call(server.db.register_attempts.count_documents, {}) == 3  # refused tries count too
     assert not hasattr(server, "_rate_buckets")  # no per-process state left to drift between instances
+
+
+def test_parallel_contest_submits_are_one_shot(client, diagnostic_quiz, monkeypatch):
+    me = _new_teacher(client, "teacher_contest_race")
+    kid = _new_student(client, me, "contest_race_kid")
+    contest = client.post("/api/tournaments", headers=me, json={
+        "title": "Race Cup", "subject": "Science", "age_group": "all", "scope": "class",
+        "quiz_id": diagnostic_quiz["id"], "duration_days": 3}).json()
+    assert client.post(f"/api/tournaments/{contest['id']}/join", headers=kid).status_code == 200
+    before = client.get("/api/auth/me", headers=kid).json()["points"]
+    answers, _ = _quiz_answers()
+
+    collection_cls = type(server.db.tournament_entries)
+    original = collection_cls.find_one
+
+    async def yielding_find_one(self, *args, **kwargs):
+        result = await original(self, *args, **kwargs)
+        await asyncio.sleep(0.01)
+        return result
+    monkeypatch.setattr(collection_cls, "find_one", yielding_find_one)
+
+    async def burst():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=server.app), base_url="http://test") as ac:
+            return await asyncio.gather(*[ac.post(f"/api/tournaments/{contest['id']}/submit",
+                                                  json={"answers": answers}, headers=kid) for _ in range(3)])
+    codes = sorted(r.status_code for r in client.portal.call(burst))
+    assert codes == [200, 400, 400]
+    assert client.get("/api/auth/me", headers=kid).json()["points"] == before + server.TOURNAMENT_POINTS

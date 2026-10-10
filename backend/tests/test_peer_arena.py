@@ -588,7 +588,7 @@ def test_reports_from_outside_the_class_queue_a_public_scenario_but_never_hide_i
     assert doc["id"] in _visible_ids(client, classmate)
     mine = _mine(client, author, doc["id"])
     assert mine["status"] == "approved" and mine["flag_count"] == 0
-    assert mine["needs_review"] is True and mine["needs_review_reason"] == "reports"
+    assert mine["needs_review"] is True and mine["needs_review_reasons"] == ["reports"]
 
     assert _flag(client, classmate, doc["id"], note="Rude word in step 2").json()["hidden"] is False
     item = _queue_item(client, teacher, doc["id"])
@@ -600,7 +600,7 @@ def test_reports_from_outside_the_class_queue_a_public_scenario_but_never_hide_i
     assert _mine(client, author, doc["id"])["needs_review"] is True
     assert _review(client, teacher, doc["id"], visibility="public").status_code == 200
     mine = _mine(client, author, doc["id"])
-    assert mine["needs_review"] is False and mine["needs_review_reason"] is None
+    assert mine["needs_review"] is False and mine["needs_review_reasons"] == []
 
 
 def test_keeping_a_low_find_rate_scenario_sticks_until_solvers_double(client):
@@ -667,3 +667,52 @@ def test_worksheet_letters_are_the_same_on_every_print(client, seeded):
     first, again = (client.get("/api/teacher/worksheet", params={"ids": ids}, headers=teacher).json() for _ in range(2))
     assert [i["explanations"] for i in first["items"]] == [i["explanations"] for i in again["items"]]
     assert [k["correct_letter"] for k in first["answer_key"]] == [k["correct_letter"] for k in again["answer_key"]]
+
+
+def test_a_keep_covers_low_find_rate_and_outside_reports_together(client):
+    teacher, (author, *solvers) = _class(client, 7, verified=True)
+    doc = _created(client, author)
+    assert _review(client, teacher, doc["id"], visibility="public").status_code == 200
+    for solver in solvers[:5]:
+        _solve(client, solver, doc["id"], found=False)
+    assert _mine(client, author, doc["id"])["needs_review_reasons"] == ["low_rate"]
+    assert _flag(client, _register(client, _name("outsider")), doc["id"]).json()["hidden"] is False
+    assert _mine(client, author, doc["id"])["needs_review_reasons"] == ["low_rate", "reports"]
+
+    assert _review(client, teacher, doc["id"], visibility="public").status_code == 200  # read both, kept it
+    mine = _mine(client, author, doc["id"])
+    assert mine["needs_review"] is False and mine["low_rate_kept_at_solvers"] == 5
+    _solve(client, solvers[5], doc["id"], found=False)
+    assert _mine(client, author, doc["id"])["needs_review"] is False  # not back after one more solver
+
+
+def test_withdrawing_again_changes_nothing_and_legacy_withdrawals_count_only_if_live(client):
+    teacher, (author, a, b) = _class(client, 3)
+    live, flagged = _live(client, teacher, author), _live(client, teacher, author, title="Second falling ball")
+    for doc in (live, flagged):
+        _solve(client, a, doc["id"], found=False)
+    # Simulate scenarios withdrawn before withdrawn_from existed: one pulled while live, one after reports
+    legacy = {"status": "withdrawn"}
+    client.portal.call(server.db.arena_challenges.update_one, {"id": live["id"]}, {"$set": legacy})
+    client.portal.call(server.db.arena_challenges.update_one, {"id": flagged["id"]},
+                       {"$set": {**legacy, "review_reason": "flagged"}})
+    assert _diag_row(client, teacher, "heavier-falls-faster")["occurrences"] == 1  # only the live one
+
+    assert client.delete(f"/api/arena/peer/{live['id']}", headers=author).json()["status"] == "withdrawn"
+    assert "withdrawn_from" not in _mine(client, author, live["id"])
+    assert _diag_row(client, teacher, "heavier-falls-faster")["occurrences"] == 1
+
+
+def test_reports_filed_before_in_class_existed_cannot_tip_a_public_scenario_offline(client):
+    teacher, (author, classmate) = _class(client, verified=True)
+    doc = _created(client, author)
+    assert _review(client, teacher, doc["id"], visibility="public").status_code == 200
+    for _ in range(server.FLAG_HIDE_THRESHOLD - 1):  # old-style reports from outside the class
+        outsider_id = _me(client, _register(client, _name("old_outsider")))["id"]
+        client.portal.call(server.db.arena_flags.insert_one, {
+            "id": str(uuid.uuid4()), "challenge_id": doc["id"], "user_id": outsider_id, "user_name": "x",
+            "reason": "inappropriate", "note": "", "resolved": False, "created_at": "2026-09-01T10:00:00+00:00"})
+    client.portal.call(server.db.arena_challenges.update_one, {"id": doc["id"]},
+                       {"$set": {"flag_count": server.FLAG_HIDE_THRESHOLD - 1}})
+    assert _flag(client, classmate, doc["id"]).json()["hidden"] is False
+    assert doc["id"] in _visible_ids(client, classmate)

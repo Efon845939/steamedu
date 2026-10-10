@@ -14,6 +14,15 @@ import {
   ClipboardCheck, AlertTriangle, Bug, Check, Clock, Flag, Users, Lightbulb, Undo2, Inbox, RefreshCw,
 } from 'lucide-react';
 
+// needs_review_reasons is a set; scenarios flagged before it existed were low find-rate ones
+const reviewReasonText = (reasons) => {
+  const list = reasons && reasons.length ? reasons : ['low_rate'];
+  const parts = [];
+  if (list.includes('low_rate')) parts.push('Fewer than 20% of solvers found the bug — check the answer key');
+  if (list.includes('reports')) parts.push('Students outside your class reported it — read the reports below');
+  return parts.join('. ');
+};
+
 const STATUS_FILTERS = [
   { value: 'queue', label: 'Needs attention' },
   { value: 'pending', label: 'Pending' },
@@ -138,9 +147,7 @@ const ScenarioItem = ({ s, verified, onReviewed, API }) => {
       {s.needs_review && (
         <p className="mb-3 flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900" data-testid={`review-needs-check-${s.id}`}>
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-          {s.needs_review_reason === 'reports'
-            ? 'Students outside your class reported this scenario — read the reports below'
-            : 'Fewer than 20% of solvers found the bug — check the answer key'}
+          {reviewReasonText(s.needs_review_reasons)}
         </p>
       )}
 
