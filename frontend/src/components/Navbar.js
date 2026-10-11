@@ -56,7 +56,7 @@ const Navbar = () => {
         aria-current={active ? 'page' : undefined}
         className={cn(
           'inline-flex items-center whitespace-nowrap rounded-full text-sm transition-colors duration-enter',
-          mobile ? 'min-h-11 px-4' : 'h-10 px-3.5',
+          mobile ? 'min-h-11 px-4' : 'h-10 px-3',
           active ? 'bg-brand-tint/80 font-semibold text-ink' : 'text-ink-muted hover:bg-surface/50 hover:text-ink'
         )}
         data-testid={`nav-${item.to.replace('/', '') || 'home'}`}
@@ -70,8 +70,8 @@ const Navbar = () => {
 
   return (
     <header className="sticky top-0 z-40 px-3 pt-3">
-      <nav aria-label="Main" className="glass mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 rounded-2xl pl-4 pr-2 sm:pl-5">
-        <div className="flex min-w-0 items-center gap-6">
+      <nav aria-label="Main" className="glass mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 rounded-2xl pl-4 pr-2 sm:pl-5">
+        <div className="flex min-w-0 items-center gap-4 xl:gap-6">
           <Link to="/" className="rounded-sm" aria-label="STEAM Hub home">
             <Wordmark />
           </Link>

@@ -1,15 +1,24 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { AuthContext } from '../App';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
-import { Badge } from './ui/badge';
+import { CalendarDays, CheckCircle2, Flame, Globe, GraduationCap, BookOpen, Star, Target, Trophy } from 'lucide-react';
 import axios from 'axios';
+import { AuthContext } from '../App';
+import { GlassPanel } from './lab';
 
-const Stat = ({ emoji, value, label, testid }) => (
-  <div className="text-center p-3 bg-white/60 rounded-xl" data-testid={testid}>
-    <div className="text-2xl">{emoji}</div>
-    <div className="text-xl font-bold text-gray-900">{value}</div>
-    <div className="text-xs text-gray-600">{label}</div>
+const Stat = ({ icon: Icon, value, label, testid }) => (
+  <div className="flex items-center gap-3 rounded-2xl border border-rule/50 bg-surface/45 px-4 py-3" data-testid={testid}>
+    <Icon className="h-5 w-5 shrink-0 text-brand-ink" aria-hidden="true" />
+    <div className="flex flex-col">
+      <span className="t-num text-xl leading-tight">{value}</span>
+      <span className="text-xs text-ink-muted">{label}</span>
+    </div>
   </div>
+);
+
+const Chip = ({ icon: Icon, children, testid }) => (
+  <span className="inline-flex items-center gap-1.5 rounded-full border border-rule-strong/40 bg-surface/50 px-3 py-1 text-sm" data-testid={testid}>
+    <Icon className="h-4 w-4 shrink-0 text-brand-ink" aria-hidden="true" />
+    <span>{children}</span>
+  </span>
 );
 
 export const WeeklyRecap = () => {
@@ -23,43 +32,42 @@ export const WeeklyRecap = () => {
   if (!recap) return null;
 
   return (
-    <Card className="bg-gradient-to-r from-indigo-50 via-violet-50 to-fuchsia-50 border-2 border-indigo-100 mb-8" data-testid="weekly-recap-card">
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-lg">
-          <span className="text-2xl">📅</span> Your Week in Review
-        </CardTitle>
-        <CardDescription>
-          {recap.points_week > 0
-            ? `You earned ${recap.points_week} points this week — keep the momentum going!`
-            : 'A fresh week awaits — take a quiz to get on the board!'}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 mb-4">
-          <Stat emoji="⭐" value={`+${recap.points_week}`} label="points this week" testid="recap-points" />
-          <Stat emoji="📝" value={recap.quizzes_week} label="quizzes taken" testid="recap-quizzes" />
-          <Stat emoji="🎯" value={recap.activities_week} label="activities done" testid="recap-activities" />
-          <Stat emoji="🔥" value={`${recap.active_days}/7`} label="active days" testid="recap-active-days" />
-          <Stat emoji="✅" value={recap.challenges_week} label="challenges done" testid="recap-challenges" />
-          <Stat emoji="🏆" value={recap.certificates_week} label="certificates won" testid="recap-certificates" />
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge className="bg-indigo-100 text-indigo-800" data-testid="recap-rank-general">
-            🌍 #{recap.rank_general} overall (all ages)
-          </Badge>
-          {recap.rank_age_group && (
-            <Badge className="bg-violet-100 text-violet-800" data-testid="recap-rank-age">
-              🎓 #{recap.rank_age_group} in ages {recap.age_group}
-            </Badge>
-          )}
-          {recap.best_quiz && (
-            <Badge variant="outline" data-testid="recap-best-quiz">
-              🌟 Best: {recap.best_quiz.title} ({recap.best_quiz.score}%)
-            </Badge>
-          )}
-          <Badge variant="outline">🔥 {recap.streak_days}-day streak</Badge>
-        </div>
-      </CardContent>
-    </Card>
+    <GlassPanel
+      icon={CalendarDays}
+      title="Your week"
+      description={
+        recap.points_week > 0
+          ? `You earned ${recap.points_week} points this week. Keep the streak going.`
+          : 'A fresh week. One quiz puts you on the board.'
+      }
+      data-testid="weekly-recap-card"
+    >
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <Stat icon={Star} value={`+${recap.points_week}`} label="points this week" testid="recap-points" />
+        <Stat icon={BookOpen} value={recap.quizzes_week} label="quizzes taken" testid="recap-quizzes" />
+        <Stat icon={Target} value={recap.activities_week} label="activities done" testid="recap-activities" />
+        <Stat icon={Flame} value={`${recap.active_days}/7`} label="active days" testid="recap-active-days" />
+        <Stat icon={CheckCircle2} value={recap.challenges_week} label="challenges done" testid="recap-challenges" />
+        <Stat icon={Trophy} value={recap.certificates_week} label="certificates won" testid="recap-certificates" />
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <Chip icon={Globe} testid="recap-rank-general">
+          <span className="t-num">#{recap.rank_general}</span> overall
+        </Chip>
+        {recap.rank_age_group && (
+          <Chip icon={GraduationCap} testid="recap-rank-age">
+            <span className="t-num">#{recap.rank_age_group}</span> in ages {recap.age_group}
+          </Chip>
+        )}
+        {recap.best_quiz && (
+          <Chip icon={Star} testid="recap-best-quiz">
+            Best: {recap.best_quiz.title} (<span className="t-num">{recap.best_quiz.score}%</span>)
+          </Chip>
+        )}
+        <Chip icon={Flame}>
+          <span className="t-num">{recap.streak_days}</span>-day streak
+        </Chip>
+      </div>
+    </GlassPanel>
   );
 };

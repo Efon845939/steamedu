@@ -1,5 +1,6 @@
 import React from 'react';
-import { Button } from './ui/button';
+import { RotateCcw } from 'lucide-react';
+import { BrandMark } from './lab';
 
 // Pages load lazily; on a flaky connection a chunk can fail to download.
 // Show a retry instead of a blank screen.
@@ -20,21 +21,30 @@ export class ChunkErrorBoundary extends React.Component {
   render() {
     if (!this.state.failed) return this.props.children;
     return (
-      <div className="min-h-[60vh] flex items-center justify-center px-4" role="alert" data-testid="page-load-error">
-        <div className="text-center max-w-sm">
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">This page didn't load</h2>
-          <p className="text-gray-600 mb-4">Your connection may have dropped. Check it and try again.</p>
-          <Button onClick={() => window.location.reload()} className="bg-emerald-600 hover:bg-emerald-700">
+      <div className="flex min-h-[60vh] items-center justify-center px-4" role="alert" data-testid="page-load-error">
+        <div className="glass glass-strong flex max-w-sm flex-col items-start gap-3 rounded-[24px] p-7">
+          <h2 className="t-h3">This page did not load</h2>
+          <p className="text-ink-muted">Your connection may have dropped. Check it and try again.</p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="glass-brand mt-2 inline-flex h-11 items-center gap-2 rounded-full px-5 font-semibold"
+          >
+            <RotateCcw className="h-4 w-4" aria-hidden="true" />
             Retry
-          </Button>
+          </button>
         </div>
       </div>
     );
   }
 }
 
+// While a page's code arrives: the mark, breathing. Reduced and off motion keep it still.
 export const PageFallback = () => (
-  <div className="min-h-[60vh] flex items-center justify-center text-gray-600" role="status">
-    Loading…
+  <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3 text-brand-ink" role="status" aria-live="polite">
+    <span className="animate-pulse">
+      <BrandMark size={30} />
+    </span>
+    <span className="text-sm text-ink-muted">Loading</span>
   </div>
 );

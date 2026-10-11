@@ -1,10 +1,9 @@
 import React, { useContext, useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
 import { AuthContext } from '../App';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
-import { Button } from './ui/button';
-import { Badge } from './ui/badge';
-import { Megaphone, CheckCircle2 } from 'lucide-react';
+import { Megaphone, CheckCircle2, Info } from 'lucide-react';
+import { GlassPanel } from './lab';
+import { cn } from '../lib/utils';
 import { toast } from 'sonner';
 import { formatApiError } from '../lib/steam';
 
@@ -37,62 +36,61 @@ export const StudentAnnouncements = () => {
   const unread = items.filter((a) => !a.read).length;
 
   return (
-    <Card className="bg-white/70 backdrop-blur-sm" data-testid="student-announcements-card">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Megaphone className="w-6 h-6 text-sky-600" />
-          <span>Class Announcements</span>
-          {unread > 0 && (
-            <Badge className="bg-red-100 text-red-700" data-testid="announcements-unread-badge">{unread} new</Badge>
-          )}
-        </CardTitle>
-        <CardDescription>Messages your teacher sent to the whole class</CardDescription>
-      </CardHeader>
-      <CardContent>
-        {items.length === 0 ? (
-          <p className="text-gray-500 text-sm py-4 text-center" data-testid="no-announcements-msg">
-            No announcements yet — your teacher's class news will show up here.
-          </p>
-        ) : (
-          <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
-            {items.map((a) => (
-              <div
-                key={a.id}
-                className={`p-4 rounded-lg border-2 transition-colors ${
-                  a.read ? 'border-gray-200 bg-white' : 'border-sky-300 bg-sky-50'
-                }`}
-                data-testid={`announcement-${a.id}`}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h4 className="font-semibold text-sm text-gray-900">{a.title}</h4>
-                    <p className="text-xs text-gray-600 mt-1 whitespace-pre-wrap">{a.body}</p>
-                    <p className="text-[11px] text-gray-400 mt-2">
-                      {a.teacher_name} • {new Date(a.created_at).toLocaleString()}
-                    </p>
-                  </div>
-                  {a.read ? (
-                    <span className="flex items-center gap-1 text-xs text-emerald-600 shrink-0" data-testid={`announcement-read-${a.id}`}>
-                      <CheckCircle2 className="w-4 h-4" /> Read
-                    </span>
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="border-sky-600 text-sky-600 shrink-0"
-                      onClick={() => markRead(a.id)}
-                      data-testid={`mark-read-btn-${a.id}`}
-                    >
-                      Mark read
-                    </Button>
-                  )}
+    <GlassPanel
+      className="h-full"
+      icon={Megaphone}
+      title="Class announcements"
+      description="Messages your teacher sent to the whole class"
+      aside={
+        unread > 0 ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-info-rule bg-info-tint px-3 py-1 text-sm font-semibold text-info" data-testid="announcements-unread-badge">
+            <Info className="h-4 w-4" aria-hidden="true" />
+            {unread} new
+          </span>
+        ) : null
+      }
+      data-testid="student-announcements-card"
+    >
+      {items.length === 0 ? (
+        <p className="py-4 text-sm text-ink-muted" data-testid="no-announcements-msg">
+          No announcements yet. Class news from your teacher shows up here.
+        </p>
+      ) : (
+        <ul className="flex max-h-96 flex-col gap-2.5 overflow-y-auto pr-1">
+          {items.map((a) => (
+            <li
+              key={a.id}
+              className={cn('rounded-2xl border p-4', a.read ? 'border-rule/50 bg-surface/30' : 'border-info-rule bg-info-tint/70')}
+              data-testid={`announcement-${a.id}`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 flex-col gap-1">
+                  <span className="font-semibold">{a.title}</span>
+                  <p className="whitespace-pre-wrap text-sm text-ink-muted">{a.body}</p>
+                  <span className="text-xs text-ink-muted">
+                    {a.teacher_name}, {new Date(a.created_at).toLocaleString()}
+                  </span>
                 </div>
+                {a.read ? (
+                  <span className="flex shrink-0 items-center gap-1 text-sm text-success" data-testid={`announcement-read-${a.id}`}>
+                    <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> Read
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    className="glass inline-flex h-10 shrink-0 items-center rounded-full px-4 text-sm font-semibold"
+                    onClick={() => markRead(a.id)}
+                    data-testid={`mark-read-btn-${a.id}`}
+                  >
+                    Mark read
+                  </button>
+                )}
               </div>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+            </li>
+          ))}
+        </ul>
+      )}
+    </GlassPanel>
   );
 };
 

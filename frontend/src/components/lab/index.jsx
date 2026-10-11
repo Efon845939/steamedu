@@ -130,3 +130,44 @@ export const CorrectionMark = ({ children, draw = false, className }) => {
 export const GraphPaper = ({ as: Comp = 'div', className, ...rest }) => (
   <Comp className={cn('graph-paper border border-rule', className)} {...rest} />
 );
+
+// Pointer sheen for .glass elements: the highlight follows the cursor.
+export const onSheen = (e) => {
+  const el = e.currentTarget;
+  const r = el.getBoundingClientRect();
+  el.style.setProperty('--mx', `${((e.clientX - r.left) / r.width) * 100}%`);
+  el.style.setProperty('--my', `${((e.clientY - r.top) / r.height) * 100}%`);
+};
+
+// A glass section with an optional header (icon, title, description, aside).
+export const GlassPanel = ({
+  as: Comp = 'section',
+  title,
+  icon: Icon,
+  description,
+  aside,
+  children,
+  className,
+  bodyClassName,
+  headingLevel = 2,
+  ...rest
+}) => {
+  const Heading = `h${headingLevel}`;
+  return (
+    <Comp className={cn('glass glass-strong rounded-[24px] p-5 sm:p-6', className)} onPointerMove={onSheen} {...rest}>
+      {title || aside ? (
+        <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <div className="flex min-w-0 flex-col gap-1">
+            <Heading className="flex items-center gap-2 text-lg leading-tight">
+              {Icon ? <Icon className="h-5 w-5 shrink-0 text-brand-ink" aria-hidden="true" /> : null}
+              {title}
+            </Heading>
+            {description ? <p className="text-sm text-ink-muted">{description}</p> : null}
+          </div>
+          {aside}
+        </header>
+      ) : null}
+      <div className={bodyClassName}>{children}</div>
+    </Comp>
+  );
+};
