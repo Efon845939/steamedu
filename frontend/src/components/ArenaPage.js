@@ -1,120 +1,119 @@
 import React, { useState, useEffect, useContext, useCallback, useMemo, useRef } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AuthContext } from '../App';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
-import { Badge } from './ui/badge';
 import { Label } from './ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import axios from 'axios';
 import { toast } from 'sonner';
-import {
-  Bug, Clock, ListOrdered, BadgeCheck, Users, Lock, Play, RotateCcw, GraduationCap, Printer,
-  CheckCircle2, XCircle, CircleDot, UserRound,
-} from 'lucide-react';
-import { SUBJECTS, subjectEmoji, subjectBadgeColor, formatApiError } from '../lib/steam';
-import { formatClock, scoreTier, SOURCE_FILTERS, ARENA_TABS, lockReason } from '../lib/arena';
+import { ArrowRight, Lock, Printer } from 'lucide-react';
+import { SUBJECTS, formatApiError } from '../lib/steam';
+import { formatClock, SOURCE_FILTERS, ARENA_TABS, lockReason } from '../lib/arena';
+import { misconceptionName } from '../lib/misconceptions';
+import { cn } from '../lib/utils';
+import { SpecimenLabel, StatusWord } from './lab';
 import { ArenaPlay } from './ArenaPlay';
 import { ArenaResult } from './ArenaResult';
 import { MyScenarios } from './MyScenarios';
-import { ArenaLeaderboard } from './ArenaLeaderboard';
+import { ArenaLeaderboard, TAB_LIST, TAB_TRIGGER, SEG_GROUP, segButton } from './ArenaLeaderboard';
 
-const focusRing = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2';
+const LINK = 'inline-flex min-h-11 items-center gap-1.5 font-semibold text-brand-ink underline-offset-4 hover:underline';
 
-const scoreIcon = (score) => {
-  if (score >= 100) return CheckCircle2;
-  if (score >= 50) return CircleDot;
-  return XCircle;
+// Best score so far, as a status word: 100 holds, 50 half, 0 missed.
+const bestStatus = (score) => {
+  const s = Number(score) || 0;
+  if (s >= 100) return { status: 'holds', word: 'Solved' };
+  if (s >= 50) return { status: 'unsure', word: 'Half solved' };
+  return { status: 'wrong', word: 'Missed' };
 };
 
+const sourceText = (c) => (c.source === 'peer' ? `By ${c.author_name || 'a classmate'}` : 'Official');
+
 const PageShell = ({ children }) => (
-  <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 pt-8" data-testid="arena-page">
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">{children}</div>
+  <div className="mx-auto w-full max-w-5xl px-4 pb-16 pt-8 sm:px-6 sm:pt-10" data-testid="arena-page">
+    {children}
   </div>
 );
 
-const ChallengeCard = ({ challenge: c, user, onStart }) => {
+const ChallengeRow = ({ challenge: c, user, onStart }) => {
   const reason = lockReason(c, user);
-  const tier = c.attempted ? scoreTier(c.best_score) : null;
-  const ScoreIcon = c.attempted ? scoreIcon(c.best_score) : null;
   const steps = (c.steps || []).length;
+  const best = c.attempted ? bestStatus(c.best_score) : null;
   return (
-    <Card className="bg-white/80 backdrop-blur-sm flex flex-col hover:shadow-lg transition-shadow" data-testid={`arena-card-${c.id}`}>
-      <CardHeader className="pb-3">
-        <div className="flex flex-wrap items-center gap-2 mb-2">
-          <Badge className={subjectBadgeColor(c.subject)}>
-            {subjectEmoji(c.subject)} {c.subject}
-          </Badge>
-          {c.source === 'peer' ? (
-            <Badge variant="outline" className="gap-1 max-w-full">
-              <Users className="w-3 h-3 shrink-0" aria-hidden="true" />
-              <span className="truncate">by {c.author_name || 'a classmate'}</span>
-            </Badge>
-          ) : (
-            <Badge className="bg-teal-100 text-teal-800 gap-1">
-              <BadgeCheck className="w-3 h-3" aria-hidden="true" /> Official
-            </Badge>
+    <li
+      className="grid gap-x-6 gap-y-3 border-b border-rule py-5 sm:grid-cols-[7.5rem_minmax(0,1fr)_auto]"
+      data-testid={`arena-card-${c.id}`}
+    >
+      <p className="text-sm font-semibold text-ink-muted sm:pt-0.5">{c.subject}</p>
+
+      <div className="min-w-0">
+        <h3 className="break-words text-lg">{c.title}</h3>
+        {c.problem && (
+          <p className="mt-1 line-clamp-2 break-words text-ink-muted">{c.problem}</p>
+        )}
+        <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-ink-muted">
+          <span className="min-w-0 truncate">{sourceText(c)}</span>
+          <span className="tnum">{steps} steps</span>
+          <span className="tnum">
+            <span className="sr-only">Time limit </span>
+            {formatClock(c.time_limit_seconds)}
+          </span>
+          {c.source === 'peer' && c.solvers != null && (
+            <span className="tnum">{c.solvers} {c.solvers === 1 ? 'solver' : 'solvers'}</span>
           )}
           {c.is_mine && (
-            <Badge className="bg-indigo-100 text-indigo-800 gap-1" data-testid={`arena-mine-${c.id}`}>
-              <UserRound className="w-3 h-3" aria-hidden="true" /> Yours
-            </Badge>
+            <span className="font-semibold text-ink" data-testid={`arena-mine-${c.id}`}>Yours</span>
           )}
-        </div>
-        <CardTitle className="text-lg text-gray-900 break-words">{c.title}</CardTitle>
-        {c.problem && (
-          <p className="text-sm text-gray-600 line-clamp-2 break-words">{c.problem}</p>
-        )}
-      </CardHeader>
-      <CardContent className="mt-auto space-y-3">
-        <div className="flex flex-wrap gap-2">
-          <Badge variant="outline" className="gap-1">
-            <Clock className="w-3 h-3" aria-hidden="true" />
-            <span className="sr-only">Time limit</span>
-            {formatClock(c.time_limit_seconds)}
-          </Badge>
-          <Badge variant="outline" className="gap-1">
-            <ListOrdered className="w-3 h-3" aria-hidden="true" /> {steps} steps
-          </Badge>
-          {c.attempted && (
-            <Badge className={`gap-1 ${tier.className}`} data-testid={`arena-best-${c.id}`}>
-              <ScoreIcon className="w-3 h-3" aria-hidden="true" /> Best {c.best_score ?? 0}/100
-            </Badge>
-          )}
-          {c.source === 'peer' && c.solvers != null && (
-            <Badge variant="outline" className="text-gray-600">
-              {c.solvers} {c.solvers === 1 ? 'solver' : 'solvers'}
-            </Badge>
-          )}
-        </div>
+        </p>
         {user?.role === 'teacher' && c.misconception?.description && (
-          <p className="text-xs text-gray-600 break-words" data-testid={`arena-target-${c.id}`}>
-            <span className="font-semibold">Targets:</span> {c.misconception.description}
+          <p
+            className="mt-3 flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-sm"
+            data-testid={`arena-target-${c.id}`}
+          >
+            <span className="text-ink-muted">Targets</span>
+            {c.misconception.tag && <SpecimenLabel name={misconceptionName(c.misconception.tag)} />}
+            <span className="min-w-0 break-words text-ink-muted">{c.misconception.description}</span>
           </p>
         )}
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 sm:min-w-[8.5rem] sm:flex-col sm:items-end sm:justify-start">
+        {best ? (
+          <span className="inline-flex items-center gap-2" data-testid={`arena-best-${c.id}`}>
+            <StatusWord status={best.status}>{best.word}</StatusWord>
+            <span className="text-sm text-ink-muted tnum">
+              <span className="sr-only">best score </span>{c.best_score ?? 0}/100
+            </span>
+          </span>
+        ) : c.can_attempt && user?.role !== 'teacher' ? (
+          <StatusWord status="new" />
+        ) : (
+          <span />
+        )}
         <Button
+          variant="outline"
           onClick={() => onStart(c)}
           disabled={!c.can_attempt}
           aria-describedby={reason ? `arena-lock-${c.id}` : undefined}
-          className={`w-full bg-emerald-600 hover:bg-emerald-700 ${focusRing}`}
+          className="min-w-[7.5rem]"
           data-testid={`start-arena-${c.id}`}
         >
           {!c.can_attempt ? (
-            <><Lock className="w-4 h-4" aria-hidden="true" /> Locked</>
-          ) : c.attempted ? (
-            <><RotateCcw className="w-4 h-4" aria-hidden="true" /> Try again</>
-          ) : (
-            <><Play className="w-4 h-4" aria-hidden="true" /> Start</>
-          )}
+            <><Lock aria-hidden="true" /> Locked</>
+          ) : c.attempted ? 'Try again' : 'Start'}
         </Button>
         {reason && (
-          <p id={`arena-lock-${c.id}`} className="text-xs text-gray-500 text-center" data-testid={`arena-lock-reason-${c.id}`}>
+          <p
+            id={`arena-lock-${c.id}`}
+            className="w-full max-w-[16rem] text-sm text-ink-muted sm:text-right"
+            data-testid={`arena-lock-reason-${c.id}`}
+          >
             {reason}
           </p>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </li>
   );
 };
 
@@ -241,12 +240,24 @@ const ArenaPage = () => {
     startChallenge(nextChallenge);
   }, [nextChallenge, id, navigate, searchParams, startChallenge]);
 
+  // "Solution 3 of 10" in the play and result headers (index -1 when the solution came from a deep link).
+  const position = useMemo(() => ({
+    index: active ? challenges.findIndex((c) => c.id === active.id) : -1,
+    total: challenges.length,
+  }), [active, challenges]);
+
+  // The list's one primary action: the first solution this student has not tried yet.
+  const upNext = useMemo(
+    () => (isTeacher ? null : challenges.find((c) => c.can_attempt && !c.attempted) || null),
+    [challenges, isTeacher]
+  );
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 flex items-center justify-center">
+      <div className="flex min-h-[60vh] items-center justify-center px-4">
         <div className="text-center" role="status">
           <div className="spinner mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading the Debug Arena...</p>
+          <p className="text-ink-muted">Loading the Debug Arena...</p>
         </div>
       </div>
     );
@@ -257,6 +268,7 @@ const ArenaPage = () => {
       <ArenaResult
         challenge={active}
         result={result}
+        position={position}
         onNext={nextChallenge ? handleNext : undefined}
         onBack={handleBack}
       />
@@ -264,146 +276,154 @@ const ArenaPage = () => {
   }
 
   if (active) {
-    return <ArenaPlay key={active.id} challenge={active} onFinish={handleFinish} onExit={handleExit} />;
+    return <ArenaPlay key={active.id} challenge={active} position={position} onFinish={handleFinish} onExit={handleExit} />;
   }
 
   const filtersActive = subject !== 'all' || source !== 'all';
+  const tried = challenges.filter((c) => c.attempted).length;
+  const solved = challenges.filter((c) => c.attempted && (c.best_score ?? 0) >= 100).length;
 
   return (
     <PageShell>
-      <div className="text-center mb-8">
-        <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-3" data-testid="arena-heading">
-          Debug Arena <span aria-hidden="true">🐞</span>
-        </h1>
-        <p className="text-base sm:text-lg text-gray-600 max-w-3xl mx-auto">
-          Find the step where the reasoning breaks, then name the concept it breaks — you are not looking for the
-          right answer, you are debugging someone's thinking.
+      <header className="max-w-3xl">
+        <h1 className="t-h1" data-testid="arena-heading">Debug Arena</h1>
+        <p className="mt-3 text-lg text-ink-muted">
+          Each worked solution has one step where the reasoning breaks. You are not looking for the right
+          answer: find the first wrong step, then name the idea behind it.
         </p>
-      </div>
+      </header>
 
       {isTeacher && (
-        <Card className="bg-white/80 backdrop-blur-sm mb-6 border-teal-200" data-testid="arena-teacher-note">
-          <CardContent className="py-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-gray-700">
-            <GraduationCap className="w-4 h-4 text-teal-600 shrink-0" aria-hidden="true" />
-            <span className="font-semibold">Teachers:</span>
-            <Link
-              to="/dashboard"
-              className={`text-teal-700 underline underline-offset-2 hover:text-teal-900 rounded ${focusRing}`}
-              data-testid="arena-teacher-dashboard-link"
-            >
-              review your students' scenarios on the dashboard
-            </Link>
-            <span aria-hidden="true">·</span>
-            <Link
-              to="/arena/worksheet"
-              className={`inline-flex items-center gap-1 text-teal-700 underline underline-offset-2 hover:text-teal-900 rounded ${focusRing}`}
-              data-testid="arena-worksheet-link"
-            >
-              <Printer className="w-4 h-4" aria-hidden="true" /> Print an offline worksheet
-            </Link>
-          </CardContent>
-        </Card>
+        <div
+          className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-0 border-y border-rule py-1 text-sm"
+          data-testid="arena-teacher-note"
+        >
+          <span className="text-ink-muted">For teachers</span>
+          <Link to="/dashboard" className={LINK} data-testid="arena-teacher-dashboard-link">
+            Review your students' scenarios on the dashboard
+          </Link>
+          <Link to="/arena/worksheet" className={LINK} data-testid="arena-worksheet-link">
+            <Printer className="h-4 w-4" aria-hidden="true" /> Print an offline worksheet
+          </Link>
+        </div>
       )}
 
-      <Tabs value={tab} onValueChange={changeTab} className="w-full">
-        <TabsList className={`grid w-full max-w-md mx-auto mb-8 ${isTeacher ? 'grid-cols-2' : 'grid-cols-3'}`}>
-          <TabsTrigger value="play" className="px-1.5 sm:px-3 text-xs sm:text-sm" data-testid="arena-tab-play">
-            <Bug className="w-4 h-4 mr-1 hidden sm:block" aria-hidden="true" />Play
-          </TabsTrigger>
+      <Tabs value={tab} onValueChange={changeTab} className="mt-8 w-full">
+        <TabsList className={TAB_LIST}>
+          <TabsTrigger value="play" className={TAB_TRIGGER} data-testid="arena-tab-play">Play</TabsTrigger>
           {!isTeacher && (
-            <TabsTrigger value="mine" className="px-1.5 sm:px-3 text-xs sm:text-sm" data-testid="arena-tab-mine">My scenarios</TabsTrigger>
+            <TabsTrigger value="mine" className={TAB_TRIGGER} data-testid="arena-tab-mine">My scenarios</TabsTrigger>
           )}
-          <TabsTrigger value="hunters" className="px-1.5 sm:px-3 text-xs sm:text-sm" data-testid="arena-tab-hunters">Hunters</TabsTrigger>
+          <TabsTrigger value="hunters" className={TAB_TRIGGER} data-testid="arena-tab-hunters">Hunters</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="play">
-          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-center gap-4 mb-8">
-            <div className="space-y-1">
-              <Label htmlFor="arena-subject" className="text-gray-700">Subject</Label>
-              <Select value={subject} onValueChange={setSubject}>
-                <SelectTrigger id="arena-subject" className="w-full sm:w-56 bg-white" data-testid="arena-subject-select">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Subjects</SelectItem>
-                  {SUBJECTS.map((s) => (
-                    <SelectItem key={s} value={s}>{subjectEmoji(s)} {s}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <span id="arena-source-label" className="block text-sm font-medium leading-none text-gray-700">Made by</span>
-              <div
-                role="group"
-                aria-labelledby="arena-source-label"
-                className="inline-flex w-full sm:w-auto rounded-md border border-input bg-white p-0.5"
-              >
-                {SOURCE_FILTERS.map((f) => {
-                  const selected = source === f.value;
-                  return (
-                    <button
-                      key={f.value}
-                      type="button"
-                      onClick={() => setSource(f.value)}
-                      aria-pressed={selected}
-                      className={`flex-1 sm:flex-none px-3 h-8 text-sm rounded font-medium transition-colors ${focusRing} ${
-                        selected ? 'bg-emerald-600 text-white' : 'text-gray-700 hover:bg-emerald-50'
-                      }`}
-                      data-testid={`arena-source-${f.value}`}
-                    >
-                      {f.label}
-                    </button>
-                  );
-                })}
+        <TabsContent value="play" className="mt-8">
+          {upNext && (
+            <section
+              aria-labelledby="arena-up-next"
+              className="surface-raised mb-10 flex flex-wrap items-center justify-between gap-x-6 gap-y-4 px-5 py-5 sm:px-6"
+            >
+              <div className="min-w-0">
+                <p className="t-cap">Next up</p>
+                <h2 id="arena-up-next" className="mt-0.5 break-words text-xl">{upNext.title}</h2>
+                <p className="mt-0.5 text-ink-muted tnum">
+                  {upNext.subject}, {(upNext.steps || []).length} steps, {formatClock(upNext.time_limit_seconds)} on the clock
+                </p>
+              </div>
+              <Button onClick={() => startChallenge(upNext)} className="min-w-[9rem]" data-testid="arena-up-next-btn">
+                Start <ArrowRight aria-hidden="true" />
+              </Button>
+            </section>
+          )}
+
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
+              <div className="space-y-1.5">
+                <Label htmlFor="arena-subject" className="text-ink-muted">Subject</Label>
+                <Select value={subject} onValueChange={setSubject}>
+                  <SelectTrigger id="arena-subject" className="w-full sm:w-56" data-testid="arena-subject-select">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All subjects</SelectItem>
+                    {SUBJECTS.map((s) => (
+                      <SelectItem key={s} value={s}>{s}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <span id="arena-source-label" className="block text-sm font-medium leading-none text-ink-muted">Made by</span>
+                <div role="group" aria-labelledby="arena-source-label" className={cn(SEG_GROUP, 'flex w-full sm:inline-flex sm:w-auto')}>
+                  {SOURCE_FILTERS.map((f) => {
+                    const selected = source === f.value;
+                    return (
+                      <button
+                        key={f.value}
+                        type="button"
+                        onClick={() => setSource(f.value)}
+                        aria-pressed={selected}
+                        className={cn(segButton(selected), 'flex-1 sm:flex-none')}
+                        data-testid={`arena-source-${f.value}`}
+                      >
+                        {f.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
+            {challenges.length > 0 && (
+              <p className="text-sm text-ink-muted tnum sm:pb-2.5">
+                {isTeacher
+                  ? `${challenges.length} ${challenges.length === 1 ? 'solution' : 'solutions'}`
+                  : `${tried} of ${challenges.length} tried, ${solved} solved in full`}
+              </p>
+            )}
           </div>
 
           <p className="sr-only" aria-live="polite" data-testid="arena-results-count">
-            {refreshing ? '' : `${challenges.length} ${challenges.length === 1 ? 'challenge' : 'challenges'} shown`}
+            {refreshing ? '' : `${challenges.length} ${challenges.length === 1 ? 'solution' : 'solutions'} shown`}
           </p>
-          <div aria-busy={refreshing}>
+          <div aria-busy={refreshing} className="mt-6">
             {challenges.length === 0 ? (
-              <Card className="bg-white/80 backdrop-blur-sm max-w-md mx-auto" data-testid="arena-empty">
-                <CardHeader className="text-center">
-                  <div className="text-5xl mb-2" aria-hidden="true">🔍</div>
-                  <CardTitle className="text-xl text-gray-900">No challenges here yet</CardTitle>
-                </CardHeader>
-                <CardContent className="text-center space-y-4">
-                  <p className="text-gray-600">
-                    {filtersActive
-                      ? 'Nothing matches these filters. Try another subject or show everything.'
-                      : 'There are no Debug Arena challenges for you right now. Check back soon!'}
-                  </p>
-                  {filtersActive && (
-                    <Button
-                      onClick={() => { setSubject('all'); setSource('all'); }}
-                      className={`bg-emerald-600 hover:bg-emerald-700 ${focusRing}`}
-                      data-testid="arena-clear-filters-btn"
-                    >
-                      Show all challenges
-                    </Button>
-                  )}
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6" data-testid="arena-challenge-list">
-                {challenges.map((c) => (
-                  <ChallengeCard key={c.id} challenge={c} user={user} onStart={startChallenge} />
-                ))}
+              <div className="border-y border-rule py-10" data-testid="arena-empty">
+                <h2 className="t-h3">No solutions here yet</h2>
+                <p className="mt-2 max-w-prose text-ink-muted">
+                  {filtersActive
+                    ? 'Nothing matches these filters. Try another subject or show everything.'
+                    : 'There are no Debug Arena solutions for you right now. Check back soon.'}
+                </p>
+                {filtersActive && (
+                  <Button
+                    onClick={() => { setSubject('all'); setSource('all'); }}
+                    className="mt-5"
+                    data-testid="arena-clear-filters-btn"
+                  >
+                    Show all solutions
+                  </Button>
+                )}
               </div>
+            ) : (
+              <>
+                <h2 className="sr-only">Solutions</h2>
+                <ul className="border-t border-rule" data-testid="arena-challenge-list">
+                  {challenges.map((c) => (
+                    <ChallengeRow key={c.id} challenge={c} user={user} onStart={startChallenge} />
+                  ))}
+                </ul>
+              </>
             )}
           </div>
         </TabsContent>
 
         {!isTeacher && (
-          <TabsContent value="mine">
+          <TabsContent value="mine" className="mt-8">
             <MyScenarios />
           </TabsContent>
         )}
 
-        <TabsContent value="hunters">
+        <TabsContent value="hunters" className="mt-8">
           <ArenaLeaderboard />
         </TabsContent>
       </Tabs>

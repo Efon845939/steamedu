@@ -1,10 +1,8 @@
 import React, { useState, useContext, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import * as m from 'motion/react-m';
 import { AuthContext } from '../App';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
-import { Badge } from './ui/badge';
-import { Alert, AlertDescription } from './ui/alert';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from './ui/dialog';
@@ -13,48 +11,37 @@ import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
 import axios from 'axios';
 import { toast } from 'sonner';
-import {
-  Bug, CheckCircle2, XCircle, AlertTriangle, Lightbulb, Flag, ArrowRight, ArrowLeft, LayoutDashboard, Users, Target,
-} from 'lucide-react';
-import { subjectEmoji, subjectBadgeColor, formatApiError } from '../lib/steam';
+import { ArrowLeft, ArrowRight, Flag } from 'lucide-react';
+import { formatApiError } from '../lib/steam';
 import { scoreTier, stepLabel, ratePercent, FLAG_REASONS, FLAG_NOTE_MAX } from '../lib/arena';
+import { misconceptionName } from '../lib/misconceptions';
+import { MotionScope, useMotion } from '../lib/motion';
+import { useAgeTheme } from '../lib/theme';
+import { cn } from '../lib/utils';
+import { CorrectionMark, GraphPaper, SpecimenLabel, StatusWord } from './lab';
+import { ArenaCounter, JOURNAL_GRID, STEP_GRID, lineLabel, sourceLabel } from './ArenaPlay';
 
-const focusRing = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2';
+// The verdict is this screen's one orchestrated moment: steps tick "Holds" top-down, stop at
+// the wrong step and the correction mark springs in, all inside 600ms. Score, points and
+// rating are plain text from the first frame; only the marks on the sheet move.
+const TICK = 0.06;
+const MOMENT_CAP = 0.6;
+const MARK = 0.24;
 
 const CheckRow = ({ ok, okText, failText, testId }) => (
-  <li
-    className={`flex items-start gap-3 p-3 rounded-lg border ${
-      ok ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-rose-200 bg-rose-50 text-rose-900'
-    }`}
-    data-testid={testId}
-  >
-    {ok ? (
-      <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-600 mt-0.5" aria-hidden="true" />
-    ) : (
-      <XCircle className="w-5 h-5 shrink-0 text-rose-600 mt-0.5" aria-hidden="true" />
-    )}
-    <span>
-      <span className="sr-only">{ok ? 'Correct: ' : 'Not quite: '}</span>
-      {ok ? okText : failText}
-    </span>
+  <li className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-2.5" data-testid={testId}>
+    <StatusWord status={ok ? 'correct' : 'wrong'} className="w-[7.5rem] shrink-0" />
+    <span className="min-w-0 flex-1 basis-60">{ok ? okText : failText}</span>
   </li>
 );
 
-const RatingBadge = ({ rating }) => {
-  const delta = rating.delta || 0;
-  const arrow = delta > 0 ? '▲' : delta < 0 ? '▼' : '±';
-  const direction = delta > 0 ? 'up' : delta < 0 ? 'down' : 'unchanged,';
-  const color = delta > 0
-    ? 'bg-emerald-100 text-emerald-800'
-    : delta < 0 ? 'bg-rose-100 text-rose-800' : 'bg-gray-100 text-gray-800';
-  return (
-    <Badge className={`text-base px-4 py-2 ${color}`} data-testid="arena-rating">
-      Debugger rating {rating.after}{' '}
-      <span aria-hidden="true">({arrow}{Math.abs(delta)})</span>
-      <span className="sr-only">({direction} {Math.abs(delta)})</span>
-    </Badge>
-  );
+const ratingWords = (delta) => {
+  if (delta > 0) return `up ${delta}`;
+  if (delta < 0) return `down ${Math.abs(delta)}`;
+  return 'no change';
 };
+
+const lowerFirst = (text) => (text ? text.charAt(0).toLowerCase() + text.slice(1) : '');
 
 const FlagDialog = ({ open, onOpenChange, challenge, onFlagged }) => {
   const { API } = useContext(AuthContext);
@@ -70,9 +57,9 @@ const FlagDialog = ({ open, onOpenChange, challenge, onFlagged }) => {
       if (note.trim()) body.note = note.trim();
       const res = await axios.post(`${API}/arena/challenges/${challenge.id}/flag`, body);
       if (res.data.hidden) {
-        toast.success('Thanks for the report — the scenario has been taken down until your teacher reviews it.');
+        toast.success('Thanks for the report. The scenario is hidden until your teacher reviews it.');
       } else {
-        toast.success('Thanks for the report — your teacher will take a look.');
+        toast.success('Thanks for the report. Your teacher will take a look.');
       }
       onFlagged();
       onOpenChange(false);
@@ -89,9 +76,9 @@ const FlagDialog = ({ open, onOpenChange, challenge, onFlagged }) => {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-lg rounded-lg" data-testid="flag-scenario-dialog">
+      <DialogContent className="max-w-[calc(100vw-2rem)] rounded-xl sm:max-w-lg" data-testid="flag-scenario-dialog">
         <DialogHeader>
-          <DialogTitle>Report a problem</DialogTitle>
+          <DialogTitle className="font-sans">Report a problem</DialogTitle>
           <DialogDescription>
             Something off with &ldquo;{challenge.title}&rdquo;? Your teacher sees every report.
           </DialogDescription>
@@ -123,7 +110,7 @@ const FlagDialog = ({ open, onOpenChange, challenge, onFlagged }) => {
               aria-describedby="flag-note-count"
               data-testid="flag-note-input"
             />
-            <p id="flag-note-count" className="text-xs text-gray-500 text-right">
+            <p id="flag-note-count" className="text-right text-sm text-ink-muted tnum">
               {note.length}/{FLAG_NOTE_MAX}
             </p>
           </div>
@@ -132,13 +119,8 @@ const FlagDialog = ({ open, onOpenChange, challenge, onFlagged }) => {
           <Button variant="outline" onClick={() => onOpenChange(false)} data-testid="flag-cancel-btn">
             Cancel
           </Button>
-          <Button
-            onClick={send}
-            disabled={!reason || sending}
-            className="bg-rose-600 hover:bg-rose-700 text-white"
-            data-testid="flag-submit-btn"
-          >
-            {sending ? 'Sending…' : 'Send report'}
+          <Button onClick={send} disabled={!reason || sending} data-testid="flag-submit-btn">
+            {sending ? 'Sending...' : 'Send report'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -146,9 +128,12 @@ const FlagDialog = ({ open, onOpenChange, challenge, onFlagged }) => {
   );
 };
 
-export const ArenaResult = ({ challenge, result, onNext, onBack }) => {
+const ArenaResultSheet = ({ challenge, result, onNext, onBack, position }) => {
   const { user } = useContext(AuthContext);
   const navigate = useNavigate();
+  const theme = useAgeTheme();
+  const mo = useMotion();
+  const journal = theme === '18+';
   const headingRef = useRef(null);
   const [flagOpen, setFlagOpen] = useState(false);
   const [flagged, setFlagged] = useState(false);
@@ -167,6 +152,9 @@ export const ArenaResult = ({ challenge, result, onNext, onBack }) => {
   const textFont = isCode ? 'font-mono text-sm' : '';
   const findPct = ratePercent(result.community?.find_rate);
   const solvers = result.community?.solvers || 0;
+  const tag = result.misconception?.tag;
+  const trap = result.misconception?.description;
+  const showStreak = theme === '13-15' || theme === '16-18';
 
   const stepFailText = picked == null
     ? `You didn't pick a step. The bug was in ${stepLabel(flawed)}.`
@@ -175,184 +163,248 @@ export const ArenaResult = ({ challenge, result, onNext, onBack }) => {
     ? "You didn't pick an explanation."
     : 'Your explanation didn’t match the concept this step breaks.';
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 pt-8" data-testid="arena-result">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        <Card className="bg-white/90 backdrop-blur-sm shadow-xl">
-          <CardHeader className="text-center pb-2">
-            <div className="flex flex-wrap justify-center gap-2 mb-2">
-              <Badge className={subjectBadgeColor(challenge.subject)}>
-                {subjectEmoji(challenge.subject)} {challenge.subject}
-              </Badge>
-              {isPeer && (
-                <Badge variant="outline" className="gap-1" data-testid="arena-result-author">
-                  <Users className="w-3 h-3" aria-hidden="true" /> by {result.author_name || challenge.author_name || 'a classmate'}
-                </Badge>
-              )}
-            </div>
-            <h1
-              ref={headingRef}
-              tabIndex={-1}
-              className="text-2xl sm:text-3xl font-bold text-gray-900 break-words focus:outline-none"
-              data-testid="arena-result-title"
-            >
-              Diagnosis: {challenge.title}
-            </h1>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="text-center space-y-3">
-              <div className="text-5xl sm:text-6xl font-bold text-gray-900 tabular-nums" data-testid="arena-score">
-                {result.score}/100
-              </div>
-              <Badge className={`text-base px-4 py-1 ${tier.className}`} data-testid="arena-score-tier">
-                {result.score >= 100 ? '🐞 ' : ''}{tier.label}
-              </Badge>
-            </div>
+  // Timings for the moment. Reduced: a 120ms fade, no delays. Off (and lite): final state at once.
+  const breakAt = mo.full ? Math.min((flawed || 0) * TICK, MOMENT_CAP - MARK) : 0;
+  const gap = mo.full && flawed > 0 ? breakAt / flawed : 0;
+  const tickIn = (i) => (mo.off ? { initial: false } : {
+    initial: { opacity: 0, y: mo.travel },
+    animate: { opacity: 1, y: 0 },
+    transition: { ...mo.enter, delay: i * gap },
+  });
+  const breakIn = mo.off ? { initial: false } : {
+    initial: { opacity: 0, scale: mo.full ? 0.92 : 1 },
+    animate: { opacity: 1, scale: 1 },
+    transition: mo.full ? { ...mo.spring, delay: breakAt } : mo.enter,
+  };
+  const markIn = mo.off ? { initial: false } : mo.full ? {
+    initial: { clipPath: 'inset(0 100% 0 0)' },
+    animate: { clipPath: 'inset(0 0% 0 0)' },
+    transition: { duration: MARK, ease: [0.3, 1.3, 0.55, 1], delay: breakAt },
+  } : { initial: { opacity: 0 }, animate: { opacity: 1 }, transition: mo.enter };
+  const noteIn = mo.off ? { initial: false } : {
+    initial: { opacity: 0, y: mo.full ? -mo.travel : 0 },
+    animate: { opacity: 1, y: 0 },
+    transition: mo.full ? { ...mo.spring, delay: Math.min(breakAt + 0.1, MOMENT_CAP - 0.2) } : mo.enter,
+  };
 
-            <ul className="grid gap-3 sm:grid-cols-2" aria-label="How you did">
-              <CheckRow
-                ok={result.step_correct}
-                okText={`You found the broken step (${stepLabel(flawed)}).`}
-                failText={stepFailText}
-                testId="arena-check-step"
-              />
-              <CheckRow
-                ok={result.explanation_correct}
-                okText="You named the concept it breaks."
-                failText={conceptFailText}
-                testId="arena-check-concept"
-              />
-            </ul>
+  const statusFor = (i) => {
+    if (i < flawed) {
+      return (
+        <m.span className="inline-flex" {...tickIn(i)}>
+          <StatusWord status="holds" />
+        </m.span>
+      );
+    }
+    if (i === flawed) {
+      return (
+        <m.span className="inline-flex origin-left" {...breakIn}>
+          <StatusWord status="breaks" data-testid="arena-bug-label">
+            {journal ? `Breaks at ${lineLabel(i, true)}` : 'Breaks here'}
+          </StatusWord>
+        </m.span>
+      );
+    }
+    return null;
+  };
 
-            <div className="flex flex-wrap justify-center gap-3">
-              <Badge className="text-base px-4 py-2 bg-yellow-100 text-yellow-800" data-testid="arena-points-earned">
-                ⭐ +{result.points_earned || 0} points
-              </Badge>
-              <Badge className="text-base px-4 py-2 bg-orange-100 text-orange-800" data-testid="arena-streak">
-                🔥 {result.streak_days || 0}-day streak
-              </Badge>
-              {result.rating && <RatingBadge rating={result.rating} />}
-            </div>
+  const pickNote = (i) => (picked === i ? (
+    <span className={cn('t-cap block', !journal && 'mt-2')} data-testid="arena-pick-label">
+      {journal ? 'You marked this line.' : 'Your pick'}
+    </span>
+  ) : null);
 
-            {isPeer && (
-              <p className="text-center text-sm text-gray-600" data-testid="arena-community">
-                {findPct == null || solvers === 0
-                  ? 'No classmates have a counted attempt on this one yet.'
-                  : `${findPct}% of ${solvers} ${solvers === 1 ? 'classmate' : 'classmates'} found it.`}
-              </p>
-            )}
-            {!result.first_attempt && (
-              <p className="text-center text-sm text-gray-500" data-testid="arena-retry-note">
-                Points and rating only count on your first attempt.
-              </p>
-            )}
-          </CardContent>
-        </Card>
+  const stepText = (text, i) => {
+    const body = <span className={cn('block whitespace-pre-wrap break-words', textFont)}>{text}</span>;
+    if (i !== flawed) return <span className="relative block">{body}</span>;
+    return (
+      <span className="relative block">
+        {body}
+        <m.span aria-hidden="true" className="pointer-events-none absolute inset-0 -bottom-3 text-transparent" {...markIn}>
+          <CorrectionMark className="block">{body}</CorrectionMark>
+        </m.span>
+      </span>
+    );
+  };
 
-        <Card className="bg-white/80 backdrop-blur-sm" data-testid="arena-result-steps">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg text-gray-900">The reasoning, debugged</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className={`whitespace-pre-wrap break-words text-gray-700 bg-gray-50 rounded-lg p-3 ${textFont}`}>
-              {challenge.problem}
-            </p>
-            <ol className="space-y-2">
-              {steps.map((text, i) => {
-                const isBug = i === flawed;
-                const isPick = picked === i;
-                const wrongPick = isPick && !isBug;
-                let style = 'border-gray-200 bg-white';
-                if (isBug) style = 'border-rose-500 bg-rose-50';
-                else if (wrongPick) style = 'border-amber-400 bg-amber-50';
-                return (
-                  <li
-                    key={i}
-                    className={`p-3 rounded-lg border-2 ${style}`}
-                    data-testid={`arena-result-step-${i}`}
-                  >
-                    <div className="flex items-start gap-3">
-                      <span
-                        className={`shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-full text-sm font-semibold ${
-                          isBug ? 'bg-rose-600 text-white' : wrongPick ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-700'
-                        }`}
-                        aria-hidden="true"
-                      >
-                        {isBug ? <Bug className="w-4 h-4" /> : i + 1}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <span className="sr-only">Step {i + 1}: </span>
-                        <span className={`whitespace-pre-wrap break-words text-gray-800 ${textFont}`}>{text}</span>
-                        {(isBug || isPick) && (
-                          <div className="mt-1 flex flex-wrap gap-2">
-                            {isBug && (
-                              <span className="inline-flex items-center gap-1 text-xs font-semibold text-rose-700" data-testid="arena-bug-label">
-                                <Bug className="w-3 h-3" aria-hidden="true" /> The bug
-                              </span>
-                            )}
-                            {isPick && (
-                              <span
-                                className={`inline-flex items-center gap-1 text-xs font-semibold ${isBug ? 'text-emerald-700' : 'text-amber-700'}`}
-                                data-testid="arena-pick-label"
-                              >
-                                <Target className="w-3 h-3" aria-hidden="true" /> Your pick
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </li>
-                );
-              })}
-            </ol>
-
-            <div className="rounded-lg border-2 border-emerald-300 bg-emerald-50 p-4" data-testid="arena-correct-explanation">
-              <p className="flex items-center gap-2 text-sm font-semibold text-emerald-800 mb-1">
-                <CheckCircle2 className="w-4 h-4" aria-hidden="true" /> Why it's wrong
-              </p>
-              <p className="whitespace-pre-wrap break-words text-emerald-900">{result.correct_explanation}</p>
-              {result.selected_explanation && !result.explanation_correct && (
-                <p className="mt-2 text-sm text-gray-700">
-                  <span className="font-semibold">You picked:</span> {result.selected_explanation}
-                </p>
-              )}
-            </div>
-
-            {result.misconception?.description && (
-              <Alert role="note" className="border-rose-300 bg-rose-50 text-rose-900" data-testid="arena-misconception">
-                <AlertTriangle className="h-4 w-4 !text-rose-600" aria-hidden="true" />
-                <AlertDescription>
-                  <span className="font-semibold">The trap:</span> {result.misconception.description}
-                </AlertDescription>
-              </Alert>
-            )}
-          </CardContent>
-        </Card>
-
-        {result.debrief && (
-          <Card className="bg-amber-50 border-amber-200" data-testid="arena-debrief">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-lg text-amber-900 flex items-center gap-2">
-                <Lightbulb className="w-5 h-5 text-amber-600" aria-hidden="true" /> Debrief
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="whitespace-pre-wrap break-words text-amber-950">{result.debrief}</p>
-            </CardContent>
-          </Card>
+  // The margin note under (or beside, at 18+) the wrong step: the specimen, then the explanation.
+  const note = (
+    <m.div className={cn('flex flex-col gap-2', journal && 'border-l-2 border-brand pl-3 text-sm')} {...noteIn}>
+      {(tag || trap) && (
+        <p className="flex flex-wrap items-center gap-x-2.5 gap-y-1" data-testid="arena-misconception">
+          {tag && <SpecimenLabel name={misconceptionName(tag)} />}
+          {trap && <span className="text-sm text-ink-muted">The trap: {lowerFirst(trap)}</span>}
+        </p>
+      )}
+      <div data-testid="arena-correct-explanation">
+        <p className="whitespace-pre-wrap break-words">{result.correct_explanation}</p>
+        {result.selected_explanation && !result.explanation_correct && (
+          <p className="mt-1 text-sm text-ink-muted">
+            You picked: <span className="text-ink">{result.selected_explanation}</span>
+          </p>
         )}
+      </div>
+    </m.div>
+  );
 
+  const rating = result.rating;
+  const delta = rating?.delta || 0;
+
+  return (
+    <div className={cn('mx-auto w-full px-4 pb-16 pt-6 sm:px-6 sm:pt-8', journal ? 'max-w-5xl' : 'max-w-3xl')} data-testid="arena-result">
+      <div className={cn(journal && 'max-w-[760px]')}>
+        <ArenaCounter position={position} journal={journal} />
+        <p className="mt-3 flex flex-wrap gap-x-4 text-sm text-ink-muted">
+          <span className="font-semibold">{challenge.subject}</span>
+          {isPeer ? (
+            <span data-testid="arena-result-author">{sourceLabel(challenge, result)}</span>
+          ) : (
+            <span>{sourceLabel(challenge, result)}</span>
+          )}
+        </p>
+        <h1 ref={headingRef} tabIndex={-1} className="t-h2 mt-1.5 break-words" data-testid="arena-result-title">
+          <span className="sr-only">Diagnosis: </span>{challenge.title}
+        </h1>
+
+        <div className="mt-6 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+          <p className="t-num text-4xl leading-none" data-testid="arena-score">
+            {result.score}<span className="text-2xl text-ink-muted">/100</span>
+          </p>
+          <p className="text-lg font-semibold" data-testid="arena-score-tier">{tier.label}</p>
+        </div>
+
+        <ul className="mt-4 divide-y divide-rule border-y border-rule" aria-label="How you did">
+          <CheckRow
+            ok={result.step_correct}
+            okText={`You found the broken step (${stepLabel(flawed)}).`}
+            failText={stepFailText}
+            testId="arena-check-step"
+          />
+          <CheckRow
+            ok={result.explanation_correct}
+            okText="You named the concept it breaks."
+            failText={conceptFailText}
+            testId="arena-check-concept"
+          />
+        </ul>
+
+        <p className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-ink-muted">
+          <span data-testid="arena-points-earned">
+            <span className="t-num text-ink">+{result.points_earned || 0}</span> points
+          </span>
+          {rating && (
+            <span data-testid="arena-rating">
+              Debugger rating <span className="t-num text-ink">{Number(rating.after).toLocaleString()}</span>, {ratingWords(delta)}
+            </span>
+          )}
+          {showStreak && (
+            <span data-testid="arena-streak">
+              <span className="t-num text-ink">{result.streak_days || 0}</span>-day streak
+            </span>
+          )}
+        </p>
+        {isPeer && (
+          <p className="mt-2 text-sm text-ink-muted tnum" data-testid="arena-community">
+            {findPct == null || solvers === 0
+              ? 'No classmates have a counted attempt on this one yet.'
+              : `${findPct}% of ${solvers} ${solvers === 1 ? 'classmate' : 'classmates'} found it.`}
+          </p>
+        )}
+        {!result.first_attempt && (
+          <p className="mt-2 text-sm text-ink-muted" data-testid="arena-retry-note">
+            Points and rating only count on your first attempt.
+          </p>
+        )}
+      </div>
+
+      <section className="mt-10" data-testid="arena-result-steps" aria-labelledby="arena-checked-heading">
+        <h2 id="arena-checked-heading" className="font-sans text-base font-semibold">The reasoning, checked</h2>
+        <p className={cn('mt-2 whitespace-pre-wrap break-words text-ink-muted', journal && 'max-w-[68ch]', textFont)}>
+          {challenge.problem}
+        </p>
+
+        {journal ? (
+          <ol className="mt-4 border-t border-rule">
+            {steps.map((text, i) => (
+              <li
+                key={i}
+                className="flex flex-wrap items-stretch gap-x-7 border-b border-rule"
+                data-testid={`arena-result-step-${i}`}
+              >
+                <GraphPaper
+                  className={cn(
+                    'min-w-0 flex-[999_1_460px] border-0 border-l-2',
+                    i === flawed ? 'border-l-brand' : 'border-l-transparent'
+                  )}
+                >
+                  <div className={cn(JOURNAL_GRID, 'py-2.5 pl-1 pr-3')}>
+                    <span aria-hidden="true" className="text-right text-ink-muted t-num">{lineLabel(i, true)}</span>
+                    <span className="min-w-0">
+                      <span className="sr-only">Step {i + 1}: </span>
+                      {stepText(text, i)}
+                    </span>
+                  </div>
+                </GraphPaper>
+                <div className="flex flex-[1_1_240px] flex-col items-start gap-1.5 pb-3 pl-[3.375rem] text-sm empty:hidden sm:py-3 sm:pl-0">
+                  {i === flawed ? (
+                    <>
+                      {statusFor(i)}
+                      {note}
+                    </>
+                  ) : statusFor(i)}
+                  {pickNote(i)}
+                </div>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <GraphPaper as="ol" className="mt-4">
+            {steps.map((text, i) => (
+              <li key={i} className="border-b border-rule last:border-b-0" data-testid={`arena-result-step-${i}`}>
+                <div className={cn(STEP_GRID, 'gap-y-1.5 px-3 py-3.5 sm:grid-cols-[2.25rem_minmax(0,1fr)_8.5rem] sm:px-4')}>
+                  <span aria-hidden="true" className="text-right text-ink-muted t-num">{lineLabel(i, false)}</span>
+                  <span className="min-w-0">
+                    <span className="sr-only">Step {i + 1}: </span>
+                    {stepText(text, i)}
+                    {pickNote(i)}
+                  </span>
+                  <span className="col-start-2 empty:hidden sm:col-start-auto sm:text-right">{statusFor(i)}</span>
+                </div>
+                {i === flawed && (
+                  <div className="px-3 pb-4 pl-[3.5rem] sm:pl-[4rem] sm:pr-4">{note}</div>
+                )}
+              </li>
+            ))}
+          </GraphPaper>
+        )}
+      </section>
+
+      {result.debrief && (
+        <section className={cn('mt-8', journal && 'max-w-[68ch]')} data-testid="arena-debrief" aria-labelledby="arena-debrief-heading">
+          <h2 id="arena-debrief-heading" className="font-sans text-base font-semibold">Debrief</h2>
+          <p className="mt-2 whitespace-pre-wrap break-words">{result.debrief}</p>
+        </section>
+      )}
+
+      <div className={cn('mt-10 flex flex-col gap-3 border-t border-rule pt-5 sm:flex-row sm:flex-wrap sm:items-center', journal && 'max-w-[760px]')}>
+        <Button onClick={onNext} disabled={!onNext} className="min-w-[10rem]" data-testid="arena-next-btn">
+          {onNext ? 'Next solution' : 'No new solutions left'} <ArrowRight aria-hidden="true" />
+        </Button>
+        <Button variant="outline" onClick={onBack} data-testid="arena-back-btn">
+          <ArrowLeft aria-hidden="true" /> All solutions
+        </Button>
+        <Button variant="ghost" onClick={() => navigate('/dashboard')} data-testid="arena-dashboard-btn">
+          Dashboard
+        </Button>
         {isPeer && user?.role === 'student' && (
-          <div className="flex justify-center">
+          <>
             <Button
               variant="ghost"
               onClick={() => setFlagOpen(true)}
               disabled={flagged}
-              className={`text-gray-600 ${focusRing}`}
+              className="text-ink-muted sm:ml-auto"
               data-testid="flag-scenario-btn"
             >
-              <Flag className="w-4 h-4" aria-hidden="true" /> {flagged ? 'Reported' : 'Report a problem'}
+              <Flag aria-hidden="true" /> {flagged ? 'Reported' : 'Report a problem'}
             </Button>
             <FlagDialog
               open={flagOpen}
@@ -360,28 +412,17 @@ export const ArenaResult = ({ challenge, result, onNext, onBack }) => {
               challenge={challenge}
               onFlagged={() => setFlagged(true)}
             />
-          </div>
+          </>
         )}
-
-        <div className="flex flex-col sm:flex-row gap-3 justify-center">
-          <Button
-            onClick={onNext}
-            disabled={!onNext}
-            className={`bg-emerald-600 hover:bg-emerald-700 ${focusRing}`}
-            data-testid="arena-next-btn"
-          >
-            {onNext ? 'Next challenge' : 'No new challenges left'} <ArrowRight className="w-4 h-4" aria-hidden="true" />
-          </Button>
-          <Button variant="outline" onClick={onBack} className={focusRing} data-testid="arena-back-btn">
-            <ArrowLeft className="w-4 h-4" aria-hidden="true" /> Back to Arena
-          </Button>
-          <Button variant="outline" onClick={() => navigate('/dashboard')} className={focusRing} data-testid="arena-dashboard-btn">
-            <LayoutDashboard className="w-4 h-4" aria-hidden="true" /> Dashboard
-          </Button>
-        </div>
       </div>
     </div>
   );
 };
+
+export const ArenaResult = (props) => (
+  <MotionScope>
+    <ArenaResultSheet {...props} />
+  </MotionScope>
+);
 
 export default ArenaResult;

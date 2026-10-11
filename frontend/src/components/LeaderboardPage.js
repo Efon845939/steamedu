@@ -1,19 +1,36 @@
 import React, { useContext, useState, useEffect } from 'react';
 import { AuthContext } from '../App';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
-import { Badge } from './ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import axios from 'axios';
-import { SUBJECTS, AGE_GROUPS, subjectEmoji } from '../lib/steam';
-import { BadgeCheck, Trophy, Medal } from 'lucide-react';
+import { SUBJECTS, AGE_GROUPS } from '../lib/steam';
+import { BadgeCheck } from 'lucide-react';
+import { cn } from '../lib/utils';
 
-const rankBadge = (rank) => {
-  if (rank === 1) return '🥇';
-  if (rank === 2) return '🥈';
-  if (rank === 3) return '🥉';
-  return `#${rank}`;
+const ordinal = (n) => {
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
+  return `${n}${{ 1: 'st', 2: 'nd', 3: 'rd' }[n % 10] || 'th'}`;
 };
+
+const formatNumber = (value, digits = 0) =>
+  Number(value || 0).toLocaleString('en-US', { maximumFractionDigits: digits });
+
+const TAB_LIST = 'h-auto w-full justify-start gap-6 rounded-none border-b border-rule bg-transparent p-0 text-ink-muted';
+const TAB_TRIGGER = cn(
+  '-mb-px h-11 rounded-none border-b-2 border-transparent px-0 py-0 text-base font-semibold text-ink-muted shadow-none',
+  'hover:text-ink data-[state=active]:border-brand-ink data-[state=active]:bg-transparent data-[state=active]:text-ink data-[state=active]:shadow-none'
+);
+
+const TH = 'py-2 pr-4 text-left align-bottom text-sm font-semibold text-ink-muted';
+const TD = 'py-3 pr-4 align-middle';
+
+const Verified = () => (
+  <span className="inline-flex items-center gap-1 whitespace-nowrap text-sm font-semibold text-info">
+    <BadgeCheck aria-hidden="true" className="h-4 w-4" />
+    Verified
+  </span>
+);
 
 const LeaderboardPage = () => {
   const { user, API } = useContext(AuthContext);
@@ -43,139 +60,213 @@ const LeaderboardPage = () => {
     axios.get(`${API}/leaderboard/teachers`).then((res) => setTeachers(res.data)).catch(console.error);
   }, [API]);
 
+  const bySubject = subject !== 'all';
+  const me = students.find((s) => s.user_id === user.id);
+  const boardName = `${ageGroup === 'all' ? 'All ages' : `Ages ${ageGroup}`}${bySubject ? `, ${subject}` : ''}`;
+  const rankedBy = bySubject ? `Ranked by average best score in ${subject}.` : 'Ranked by total points.';
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 pt-8">
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="text-center mb-10">
-          <h1 className="text-4xl font-bold text-gray-900 mb-3">Leaderboards 🏆</h1>
-          <p className="text-lg text-gray-600">The best students across all ages — and the teachers who inspire them.</p>
-        </div>
+    <div className="mx-auto w-full max-w-5xl px-4 pb-16 pt-8 sm:px-6 sm:pt-10">
+      <header className="max-w-3xl animate-rise">
+        <h1 className="t-h1">Leaderboard</h1>
+        <p className="t-lead mt-3 text-ink-muted">Students ranked by points, and the teachers whose classes take part.</p>
+      </header>
 
-        <Tabs defaultValue="students" className="w-full">
-          <TabsList className="grid w-full max-w-md mx-auto grid-cols-2 mb-8">
-            <TabsTrigger value="students" data-testid="students-leaderboard-tab">Students</TabsTrigger>
-            <TabsTrigger value="teachers" data-testid="teachers-leaderboard-tab">Teachers</TabsTrigger>
-          </TabsList>
+      <Tabs defaultValue="students" className="mt-8 w-full">
+        <TabsList className={TAB_LIST}>
+          <TabsTrigger value="students" className={TAB_TRIGGER} data-testid="students-leaderboard-tab">Students</TabsTrigger>
+          <TabsTrigger value="teachers" className={TAB_TRIGGER} data-testid="teachers-leaderboard-tab">Teachers</TabsTrigger>
+        </TabsList>
 
-          <TabsContent value="students">
-            <div className="flex flex-col sm:flex-row gap-4 mb-6 justify-center">
-              <Select value={ageGroup} onValueChange={setAgeGroup}>
-                <SelectTrigger className="w-48" data-testid="leaderboard-age-select"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">🌍 All Ages (General)</SelectItem>
-                  {AGE_GROUPS.map((g) => <SelectItem key={g} value={g}>Ages {g}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <Select value={subject} onValueChange={setSubject}>
-                <SelectTrigger className="w-48" data-testid="leaderboard-subject-select"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Subjects (by points)</SelectItem>
-                  {SUBJECTS.map((s) => <SelectItem key={s} value={s}>{subjectEmoji(s)} {s}</SelectItem>)}
-                </SelectContent>
-              </Select>
+        <TabsContent value="students" className="mt-6">
+          <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
+            <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
+              <div className="flex flex-col gap-1">
+                <span id="lb-age-label" className="t-cap">Age group</span>
+                <Select value={ageGroup} onValueChange={setAgeGroup}>
+                  <SelectTrigger className="w-full sm:w-48" aria-labelledby="lb-age-label" data-testid="leaderboard-age-select">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All ages</SelectItem>
+                    {AGE_GROUPS.map((g) => <SelectItem key={g} value={g}>Ages {g}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <span id="lb-subject-label" className="t-cap">Subject</span>
+                <Select value={subject} onValueChange={setSubject}>
+                  <SelectTrigger className="w-full sm:w-56" aria-labelledby="lb-subject-label" data-testid="leaderboard-subject-select">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All subjects, by points</SelectItem>
+                    {SUBJECTS.map((s) => <SelectItem key={s} value={s}>{s}, by average score</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
+            <p className="tnum text-ink-muted sm:text-right" aria-live="polite">
+              {me ? (
+                <>
+                  You are <span className="t-num text-ink">{ordinal(me.rank)}</span> of{' '}
+                  <span className="t-num text-ink">{students.length}</span>. {rankedBy}
+                </>
+              ) : (
+                rankedBy
+              )}
+            </p>
+          </div>
 
-            <Card className="bg-white/80 backdrop-blur-sm" data-testid="students-leaderboard-card">
-              <CardContent className="pt-6">
-                {loading ? (
-                  <p className="text-center text-gray-500 py-8">Loading...</p>
-                ) : students.length === 0 ? (
-                  <p className="text-center text-gray-500 py-8">No students on this board yet.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {students.map((s) => (
-                      <div
+          <div className="mt-6 overflow-x-auto" data-testid="students-leaderboard-card">
+            {loading ? (
+              <p className="border-y border-rule py-8 text-ink-muted" role="status">Loading the board</p>
+            ) : students.length === 0 ? (
+              <p className="border-y border-rule py-8 text-ink-muted">No students on this board yet.</p>
+            ) : (
+              <table className="w-full border-collapse tnum">
+                <caption className="sr-only">Student leaderboard: {boardName}. {rankedBy}</caption>
+                <thead>
+                  <tr className="border-b border-rule-strong">
+                    <th scope="col" className={cn(TH, 'w-16 pl-3')}>Rank</th>
+                    <th scope="col" className={TH}>Student</th>
+                    <th scope="col" className={cn(TH, 'hidden md:table-cell')}>Ages</th>
+                    <th scope="col" className={cn(TH, 'text-right')}>{bySubject ? 'Avg score' : 'Points'}</th>
+                    <th scope="col" className={cn(TH, 'hidden text-right sm:table-cell')}>Streak</th>
+                    <th scope="col" className={cn(TH, 'hidden pr-3 text-right sm:table-cell')}>Quizzes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {students.map((s) => {
+                    const isMe = s.user_id === user.id;
+                    return (
+                      <tr
                         key={s.user_id}
-                        className={`flex items-center justify-between p-4 rounded-xl transition-colors ${
-                          s.user_id === user.id
-                            ? 'bg-emerald-50 border-2 border-emerald-300'
-                            : s.rank <= 3 ? 'bg-gradient-to-r from-amber-50 to-yellow-50' : 'bg-gray-50'
-                        }`}
+                        className={cn('border-b border-rule', isMe && 'bg-brand-tint')}
                         data-testid={`leaderboard-row-${s.rank}`}
                       >
-                        <div className="flex items-center gap-4">
-                          <span className="text-xl font-bold w-10 text-center">{rankBadge(s.rank)}</span>
-                          <div>
-                            <h4 className="font-semibold text-sm">
-                              {s.full_name} {s.user_id === user.id && <span className="text-emerald-600">(you)</span>}
-                            </h4>
-                            <p className="text-xs text-gray-500">@{s.username}{s.age_group ? ` • Ages ${s.age_group}` : ''}</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-3 text-sm">
-                          {subject !== 'all' ? (
-                            <Badge className="bg-blue-100 text-blue-800">avg {s.avg_score}%</Badge>
-                          ) : (
-                            <Badge className="bg-yellow-100 text-yellow-800">⭐ {s.points} pts</Badge>
-                          )}
-                          <Badge variant="outline" className="hidden sm:inline-flex">🔥 {s.streak_days}</Badge>
-                          <Badge variant="outline" className="hidden sm:inline-flex">📝 {s.quizzes_completed}</Badge>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
+                        <td className={cn(TD, 'pl-3')}>
+                          <span className="t-num text-lg">{s.rank}</span>
+                        </td>
+                        <th scope="row" className={cn(TD, 'text-left font-normal')}>
+                          <span className="font-semibold text-ink">{s.full_name}</span>
+                          {isMe && <span className="text-ink-muted"> (you)</span>}
+                          <span className="block text-sm text-ink-muted">@{s.username}</span>
+                        </th>
+                        <td className={cn(TD, 'hidden text-ink-muted md:table-cell')}>{s.age_group || ''}</td>
+                        <td className={cn(TD, 'text-right')}>
+                          <span className="t-num text-lg text-ink">
+                            {bySubject ? `${formatNumber(s.avg_score)}%` : formatNumber(s.points)}
+                          </span>
+                        </td>
+                        <td className={cn(TD, 'hidden text-right sm:table-cell')}>
+                          <span className="t-num">{formatNumber(s.streak_days)}</span>
+                          <span className="text-sm text-ink-muted"> {s.streak_days === 1 ? 'day' : 'days'}</span>
+                        </td>
+                        <td className={cn(TD, 'hidden pr-3 text-right sm:table-cell')}>
+                          <span className="t-num">{formatNumber(s.quizzes_completed)}</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </TabsContent>
 
-          <TabsContent value="teachers">
-            <div className="grid md:grid-cols-2 gap-6">
-              <Card className="bg-white/80 backdrop-blur-sm" data-testid="best-teachers-card">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2"><Trophy className="w-5 h-5 text-amber-500" />Best Teachers</CardTitle>
-                  <CardDescription>75% professional contests hosted, 25% student streaks & quiz scores</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {teachers.best.length === 0 ? (
-                    <p className="text-center text-gray-500 py-6">No teachers yet.</p>
-                  ) : teachers.best.map((t) => (
-                    <div key={t.user_id} className={`flex items-center justify-between p-3 rounded-lg ${t.rank <= 3 ? 'bg-gradient-to-r from-amber-50 to-yellow-50' : 'bg-gray-50'}`} data-testid={`best-teacher-row-${t.rank}`}>
-                      <div className="flex items-center gap-3">
-                        <span className="text-lg font-bold w-8 text-center">{rankBadge(t.rank)}</span>
-                        <div>
-                          <h4 className="font-semibold text-sm flex items-center gap-1">
-                            {t.full_name}
-                            {t.verified && <BadgeCheck className="w-4 h-4 text-sky-500" />}
-                          </h4>
-                          <p className="text-xs text-gray-500">{t.pro_tournaments} pro contests • {t.students_count} students</p>
-                        </div>
-                      </div>
-                      <Badge className="bg-amber-100 text-amber-800">{t.score}</Badge>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
+        <TabsContent value="teachers" className="mt-6">
+          <div className="grid gap-x-10 gap-y-12 lg:grid-cols-2">
+            <section aria-labelledby="best-teachers-title" data-testid="best-teachers-card">
+              <h2 id="best-teachers-title" className="t-h3">Best teachers</h2>
+              <p className="t-cap mt-1">75% professional contests hosted, 25% their students' streaks and quiz scores.</p>
+              {teachers.best.length === 0 ? (
+                <p className="mt-4 border-y border-rule py-6 text-ink-muted">No teachers yet.</p>
+              ) : (
+                <div className="mt-4 overflow-x-auto">
+                  <table className="w-full border-collapse tnum">
+                    <caption className="sr-only">Best teachers</caption>
+                    <thead>
+                      <tr className="border-b border-rule-strong">
+                        <th scope="col" className={cn(TH, 'w-14 pl-3')}>Rank</th>
+                        <th scope="col" className={TH}>Teacher</th>
+                        <th scope="col" className={cn(TH, 'pr-3 text-right')}>Score</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {teachers.best.map((t) => (
+                        <tr
+                          key={t.user_id}
+                          className={cn('border-b border-rule', t.user_id === user.id && 'bg-brand-tint')}
+                          data-testid={`best-teacher-row-${t.rank}`}
+                        >
+                          <td className={cn(TD, 'pl-3')}><span className="t-num text-lg">{t.rank}</span></td>
+                          <th scope="row" className={cn(TD, 'text-left font-normal')}>
+                            <span className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                              <span className="font-semibold text-ink">{t.full_name}</span>
+                              {t.verified && <Verified />}
+                            </span>
+                            <span className="block text-sm text-ink-muted">
+                              {formatNumber(t.pro_tournaments)} pro {t.pro_tournaments === 1 ? 'contest' : 'contests'}, {formatNumber(t.students_count)} {t.students_count === 1 ? 'student' : 'students'}
+                            </span>
+                          </th>
+                          <td className={cn(TD, 'pr-3 text-right')}>
+                            <span className="t-num text-lg text-ink">{formatNumber(t.score, 1)}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
 
-              <Card className="bg-white/80 backdrop-blur-sm" data-testid="popular-teachers-card">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2"><Medal className="w-5 h-5 text-purple-500" />Most Popular</CardTitle>
-                  <CardDescription>Number of their students who competed in contests</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {teachers.popular.length === 0 ? (
-                    <p className="text-center text-gray-500 py-6">No teachers yet.</p>
-                  ) : teachers.popular.map((t) => (
-                    <div key={t.user_id} className={`flex items-center justify-between p-3 rounded-lg ${t.rank <= 3 ? 'bg-gradient-to-r from-purple-50 to-fuchsia-50' : 'bg-gray-50'}`} data-testid={`popular-teacher-row-${t.rank}`}>
-                      <div className="flex items-center gap-3">
-                        <span className="text-lg font-bold w-8 text-center">{rankBadge(t.rank)}</span>
-                        <div>
-                          <h4 className="font-semibold text-sm flex items-center gap-1">
-                            {t.full_name}
-                            {t.verified && <BadgeCheck className="w-4 h-4 text-sky-500" />}
-                          </h4>
-                          <p className="text-xs text-gray-500">{t.students_count} mentored students</p>
-                        </div>
-                      </div>
-                      <Badge className="bg-purple-100 text-purple-800">{t.tournament_students} competing</Badge>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-        </Tabs>
-      </div>
+            <section aria-labelledby="popular-teachers-title" data-testid="popular-teachers-card">
+              <h2 id="popular-teachers-title" className="t-h3">Most popular</h2>
+              <p className="t-cap mt-1">How many of their students competed in contests.</p>
+              {teachers.popular.length === 0 ? (
+                <p className="mt-4 border-y border-rule py-6 text-ink-muted">No teachers yet.</p>
+              ) : (
+                <div className="mt-4 overflow-x-auto">
+                  <table className="w-full border-collapse tnum">
+                    <caption className="sr-only">Most popular teachers</caption>
+                    <thead>
+                      <tr className="border-b border-rule-strong">
+                        <th scope="col" className={cn(TH, 'w-14 pl-3')}>Rank</th>
+                        <th scope="col" className={TH}>Teacher</th>
+                        <th scope="col" className={cn(TH, 'pr-3 text-right')}>Competing</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {teachers.popular.map((t) => (
+                        <tr
+                          key={t.user_id}
+                          className={cn('border-b border-rule', t.user_id === user.id && 'bg-brand-tint')}
+                          data-testid={`popular-teacher-row-${t.rank}`}
+                        >
+                          <td className={cn(TD, 'pl-3')}><span className="t-num text-lg">{t.rank}</span></td>
+                          <th scope="row" className={cn(TD, 'text-left font-normal')}>
+                            <span className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                              <span className="font-semibold text-ink">{t.full_name}</span>
+                              {t.verified && <Verified />}
+                            </span>
+                            <span className="block text-sm text-ink-muted">
+                              {formatNumber(t.students_count)} mentored {t.students_count === 1 ? 'student' : 'students'}
+                            </span>
+                          </th>
+                          <td className={cn(TD, 'pr-3 text-right')}>
+                            <span className="t-num text-lg text-ink">{formatNumber(t.tournament_students)}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };

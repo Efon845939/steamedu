@@ -1,22 +1,20 @@
 import React, { useState, useContext, useCallback, useEffect, useRef } from 'react';
 import { AuthContext } from '../App';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
-import { Badge } from './ui/badge';
 import { Progress } from './ui/progress';
 import axios from 'axios';
 import { toast } from 'sonner';
-import { Bug, Clock, AlarmClock, CheckCircle2, LogOut, Send, BadgeCheck, Users } from 'lucide-react';
-import { subjectEmoji, subjectBadgeColor, formatApiError } from '../lib/steam';
+import { AlarmClock, LogOut, Timer } from 'lucide-react';
+import { formatApiError } from '../lib/steam';
 import { notifyNewBadges } from '../lib/badges';
 import { formatClock, optionLetter } from '../lib/arena';
 import { useCountdown } from '../hooks/useCountdown';
-import { useLiteMode } from '../hooks/use-lite-mode';
+import { useAgeTheme } from '../lib/theme';
+import { cn } from '../lib/utils';
+import { CorrectionMark, GraphPaper } from './lab';
 
 const LOW_TIME_SECONDS = 15;
 const DEFAULT_LIMIT_SECONDS = 90;
-
-const focusRing = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2';
 
 // Screen readers only hear the clock at these moments, not on every tick.
 const timerAnnouncement = (remaining) => {
@@ -26,14 +24,53 @@ const timerAnnouncement = (remaining) => {
   return '';
 };
 
-export const ArenaPlay = ({ challenge, onFinish, onExit }) => {
-  const { API } = useContext(AuthContext);
-  const { lite } = useLiteMode();
+// Shared with ArenaResult: the worked solution is the same sheet before and after the verdict.
+
+// Line numbers: "3" in most themes, "(3)" in the 18+ journal.
+export const lineLabel = (i, journal) => (journal ? `(${i + 1})` : String(i + 1));
+
+// One step row on graph paper: a fixed numeric gutter, then the text.
+export const STEP_GRID = 'grid w-full grid-cols-[2rem_minmax(0,1fr)] items-start gap-3 sm:grid-cols-[2.25rem_minmax(0,1fr)]';
+export const JOURNAL_GRID = 'grid w-full grid-cols-[2.5rem_minmax(0,1fr)] items-start gap-2';
+
+export const sourceLabel = (challenge, result) => (
+  (result?.source ?? challenge.source) === 'peer'
+    ? `By ${result?.author_name || challenge.author_name || 'a classmate'}`
+    : 'Official'
+);
+
+// "Debug Arena, solution 3 of 10" (18+: "Puzzle 3"). index is -1 for a deep-linked solution.
+export const ArenaCounter = ({ position, journal, className }) => {
+  const index = position?.index ?? -1;
+  const total = position?.total ?? 0;
+  if (index < 0) return <p className={cn('t-cap', className)}>Debug Arena</p>;
+  if (journal) {
+    return (
+      <p className={cn('t-cap tnum', className)}>
+        Puzzle <span className="t-num text-ink">{index + 1}</span>
+      </p>
+    );
+  }
+  return (
+    <p className={cn('t-cap tnum', className)}>
+      <span className="sm:hidden">Solution</span>
+      <span className="hidden sm:inline">Debug Arena, solution</span>{' '}
+      <span className="t-num text-ink">{index + 1}</span> of {total}
+    </p>
+  );
+};
+
+export const ArenaPlay = ({ challenge, onFinish, onExit, position }) => {
+  const { API, user } = useContext(AuthContext);
+  const theme = useAgeTheme();
+  const journal = theme === '18+';
+  const notebook = theme === '13-15';
   const [step, setStep] = useState(null);
   const [explanation, setExplanation] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [finished, setFinished] = useState(false);
   const submittingRef = useRef(false);
+  const stepRefs = useRef([]);
 
   const limit = challenge.time_limit_seconds || DEFAULT_LIMIT_SECONDS;
   const steps = challenge.steps || [];
@@ -66,7 +103,7 @@ export const ArenaPlay = ({ challenge, onFinish, onExit }) => {
 
   const handleExpire = useCallback(() => {
     elapsedRef.current = limit;
-    toast.info("Time's up — submitting what you have");
+    toast.info("Time's up. Submitting what you have.");
     submit();
   }, [limit, submit]);
 
@@ -84,219 +121,207 @@ export const ArenaPlay = ({ challenge, onFinish, onExit }) => {
   const lowTime = remaining <= LOW_TIME_SECONDS;
   const ready = step !== null && explanation !== null;
   const canSubmit = (ready || expired) && !submitting && !finished;
-  const ClockIcon = lowTime ? AlarmClock : Clock;
+  const ClockIcon = lowTime ? AlarmClock : Timer;
+  const streak = user?.streak_days || 0;
+
+  // Arrow keys move between steps; Enter or Space picks (native button behaviour).
+  const moveFocus = (event, i) => {
+    let next = null;
+    if (event.key === 'ArrowDown') next = Math.min(steps.length - 1, i + 1);
+    else if (event.key === 'ArrowUp') next = Math.max(0, i - 1);
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = steps.length - 1;
+    if (next === null) return;
+    event.preventDefault();
+    stepRefs.current[next]?.focus();
+  };
+
+  const stepHeading = journal
+    ? 'Find the first line that breaks, then say why.'
+    : 'Pick the first wrong step, then the idea behind it.';
+  const whyHeading = journal
+    ? (step === null ? 'Why does it break?' : `Why does line (${step + 1}) break?`)
+    : (step === null ? 'What is the idea behind the wrong step?' : `What is the idea behind step ${step + 1}?`);
+
+  let guide;
+  if (expired && !ready) guide = "Time's up. Submit what you have.";
+  else if (ready) guide = journal ? 'Submit when ready.' : 'Ready when you are.';
+  else if (step === null && explanation === null) guide = journal ? 'Select a line, then the reason it breaks.' : 'Pick a step and an idea to submit.';
+  else if (step === null) guide = journal ? 'Now select the first line that breaks.' : 'Now pick the first wrong step.';
+  else guide = journal ? `Now choose why line (${step + 1}) breaks.` : `Now pick the idea behind step ${step + 1}.`;
+
+  const stepButton = (text, i) => {
+    const selected = step === i;
+    const body = <span className={cn('block whitespace-pre-wrap break-words', textFont)}>{text}</span>;
+    return (
+      <button
+        key={i}
+        ref={(el) => { stepRefs.current[i] = el; }}
+        type="button"
+        onClick={() => setStep(i)}
+        onKeyDown={(e) => moveFocus(e, i)}
+        aria-pressed={selected}
+        disabled={submitting || finished}
+        className={cn(
+          'text-left transition-colors disabled:cursor-not-allowed',
+          journal
+            ? cn(JOURNAL_GRID, 'min-h-12 py-2.5 pl-1 pr-3')
+            : cn(STEP_GRID, 'min-h-14 border-b border-rule px-3 py-3.5 last:border-b-0 sm:px-4'),
+          selected ? 'bg-brand-tint/80' : 'hover:bg-brand-tint/50'
+        )}
+        data-testid={`arena-step-${i}`}
+      >
+        <span aria-hidden="true" className="text-right text-ink-muted t-num">{lineLabel(i, journal)}</span>
+        <span className="min-w-0">
+          <span className="sr-only">Step {i + 1}: </span>
+          {selected ? (
+            // The overlay box reaches below the last line so the wipe's clip never cuts its wave.
+            <CorrectionMark draw className="[&>.wavy-draw]:-bottom-3">{body}</CorrectionMark>
+          ) : <span className="relative block">{body}</span>}
+        </span>
+      </button>
+    );
+  };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 pt-8" data-testid="arena-play">
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <Card className="bg-white/90 backdrop-blur-sm shadow-lg mb-6 sticky top-16 z-30" data-testid="arena-play-header">
-          <CardContent className="p-4 space-y-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2 mb-1">
-                  <Badge className={subjectBadgeColor(challenge.subject)}>
-                    {subjectEmoji(challenge.subject)} {challenge.subject}
-                  </Badge>
-                  {challenge.source === 'peer' ? (
-                    <Badge variant="outline" className="gap-1">
-                      <Users className="w-3 h-3" aria-hidden="true" /> by {challenge.author_name || 'a classmate'}
-                    </Badge>
-                  ) : (
-                    <Badge className="bg-teal-100 text-teal-800 gap-1">
-                      <BadgeCheck className="w-3 h-3" aria-hidden="true" /> Official
-                    </Badge>
+    <div className={cn('mx-auto w-full px-4 pb-16 sm:px-6', journal ? 'max-w-5xl' : 'max-w-3xl')} data-testid="arena-play">
+      <div className="sticky top-16 z-30 -mx-4 bg-bg px-4 sm:mx-0 sm:px-0" data-testid="arena-play-header">
+        <div className="relative flex min-h-14 flex-wrap items-center justify-between gap-x-5 gap-y-1 border-b border-rule py-2">
+          <ArenaCounter position={position} journal={journal} />
+          <div className="flex items-center gap-5">
+            {notebook && streak > 0 && (
+              <span className="whitespace-nowrap text-sm">
+                <span className="t-num">{streak}</span>-day streak
+              </span>
+            )}
+            <span
+              className={cn(
+                'inline-flex items-baseline gap-1.5 whitespace-nowrap',
+                notebook ? 'text-base' : 'text-sm',
+                lowTime ? 'font-semibold text-danger' : notebook ? 'text-ink' : 'text-ink-muted'
+              )}
+              data-testid="arena-timer"
+            >
+              <ClockIcon className="h-[1.15em] w-[1.15em] shrink-0 self-center" aria-hidden="true" />
+              <span className="sr-only">Time left: </span>
+              <span className={cn('t-num', notebook && 'text-lg')}>{formatClock(remaining)}</span>
+              <span aria-hidden="true">left</span>
+              {lowTime && <span className="sr-only">, time almost up</span>}
+            </span>
+          </div>
+          <Progress
+            value={pct}
+            className={cn(
+              'absolute inset-x-0 -bottom-px h-0.5 rounded-none bg-transparent',
+              lowTime ? '[&>div]:bg-danger' : '[&>div]:bg-brand-ink'
+            )}
+            aria-label="Time remaining"
+            getValueLabel={() => `${remaining} seconds left`}
+            data-testid="arena-timer-progress"
+          />
+        </div>
+        <p className="sr-only" aria-live="polite" data-testid="arena-timer-announcement">
+          {timerAnnouncement(remaining)}
+        </p>
+      </div>
+
+      <div className={cn('mt-6 sm:mt-8', journal && 'max-w-[68ch]')}>
+        <p className="flex flex-wrap gap-x-4 text-sm text-ink-muted">
+          <span className="font-semibold">{challenge.subject}</span>
+          <span>{sourceLabel(challenge)}</span>
+        </p>
+        <h1 className="t-h2 mt-1.5 break-words" data-testid="arena-play-title">
+          {challenge.title}
+        </h1>
+        <div className="mt-4" data-testid="arena-problem-card">
+          <h2 className="sr-only">The problem</h2>
+          <p className={cn('whitespace-pre-wrap break-words', textFont)} data-testid="arena-problem">
+            {challenge.problem}
+          </p>
+        </div>
+      </div>
+
+      <section className="mt-7" data-testid="arena-steps-card">
+        <h2 id="arena-step-heading" className="font-sans text-base font-normal text-ink-muted">
+          {stepHeading}
+        </h2>
+        {journal ? (
+          <div role="group" aria-labelledby="arena-step-heading" className="mt-3 border-t border-rule">
+            {steps.map((text, i) => (
+              <div key={i} className="flex flex-wrap items-start gap-x-7 border-b border-rule">
+                <GraphPaper className="min-w-0 flex-[999_1_460px] border-0 border-l-2 border-l-transparent">
+                  {stepButton(text, i)}
+                </GraphPaper>
+                <div className="flex-[1_1_240px] pb-3 pl-[3.375rem] text-sm empty:hidden sm:py-3 sm:pl-0">
+                  {step === i && (
+                    <p className="border-l-2 border-brand pl-3 text-ink-muted">You marked this line.</p>
                   )}
                 </div>
-                <h1 className="text-base sm:text-xl font-bold text-gray-900 break-words" data-testid="arena-play-title">
-                  {challenge.title}
-                </h1>
               </div>
-              <Badge
-                className={`shrink-0 text-base px-3 py-1 gap-1 tabular-nums ${
-                  lowTime
-                    ? `bg-rose-100 text-rose-800 border-rose-300 ${lite ? '' : 'animate-pulse'}`
-                    : 'bg-emerald-100 text-emerald-800 border-emerald-200'
-                }`}
-                data-testid="arena-timer"
-              >
-                <ClockIcon className="w-4 h-4" aria-hidden="true" />
-                <span className="sr-only">Time left: </span>
-                {formatClock(remaining)}
-                {lowTime && <span className="sr-only"> — time almost up</span>}
-              </Badge>
-            </div>
-            <Progress
-              value={pct}
-              className={`h-3 ${lowTime ? 'bg-rose-100 [&>div]:bg-rose-500' : 'bg-emerald-100 [&>div]:bg-emerald-500'}`}
-              aria-label="Time remaining"
-              getValueLabel={() => `${remaining} seconds left`}
-              data-testid="arena-timer-progress"
-            />
-            <p className="sr-only" aria-live="polite" data-testid="arena-timer-announcement">
-              {timerAnnouncement(remaining)}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-white/80 backdrop-blur-sm mb-6" data-testid="arena-problem-card">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg text-gray-900">The problem</CardTitle>
-            <p className="text-sm text-gray-600">
-              Someone worked through this problem and one step of their reasoning is broken. Find it.
-            </p>
-          </CardHeader>
-          <CardContent>
-            <p className={`whitespace-pre-wrap break-words text-gray-800 ${textFont}`} data-testid="arena-problem">
-              {challenge.problem}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-white/80 backdrop-blur-sm mb-6" data-testid="arena-steps-card">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg text-gray-900 flex items-center gap-2" id="arena-step-heading">
-              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-rose-600 text-white text-sm" aria-hidden="true">1</span>
-              Which step is wrong?
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div role="group" aria-labelledby="arena-step-heading" className="space-y-2">
-              {steps.map((text, i) => {
-                const selected = step === i;
-                return (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => setStep(i)}
-                    aria-pressed={selected}
-                    disabled={submitting || finished}
-                    className={`w-full text-left p-3 sm:p-4 rounded-lg border-2 transition-colors ${focusRing} disabled:opacity-70 ${
-                      selected
-                        ? 'border-rose-500 bg-rose-50 text-rose-900'
-                        : 'border-gray-200 bg-white hover:border-rose-200 hover:bg-rose-50/50'
-                    }`}
-                    data-testid={`arena-step-${i}`}
-                  >
-                    <div className="flex items-start gap-3">
-                      <span
-                        className={`shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-full text-sm font-semibold ${
-                          selected ? 'bg-rose-600 text-white' : 'bg-gray-100 text-gray-700'
-                        }`}
-                        aria-hidden="true"
-                      >
-                        {selected ? <Bug className="w-4 h-4" /> : i + 1}
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="sr-only">Step {i + 1}: </span>
-                        <span className={`whitespace-pre-wrap break-words ${textFont}`}>{text}</span>
-                        {selected && (
-                          <span className="mt-1 flex items-center gap-1 text-xs font-semibold text-rose-700">
-                            <Bug className="w-3 h-3" aria-hidden="true" /> Bug here
-                          </span>
-                        )}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card
-          className={`bg-white/80 backdrop-blur-sm mb-6 transition-opacity ${step === null ? 'opacity-75' : ''}`}
-          data-testid="arena-explanations-card"
-        >
-          <CardHeader className="pb-2">
-            <CardTitle
-              className={`text-lg flex items-center gap-2 ${step === null ? 'text-gray-600' : 'text-gray-900'}`}
-              id="arena-explanation-heading"
-            >
-              <span
-                className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-white text-sm ${
-                  step === null ? 'bg-gray-400' : 'bg-teal-600'
-                }`}
-                aria-hidden="true"
-              >
-                2
-              </span>
-              Why is it wrong?
-            </CardTitle>
-            {step === null && (
-              <p className="text-sm text-gray-500">Pick the broken step first, then name the concept it breaks.</p>
-            )}
-          </CardHeader>
-          <CardContent>
-            <div role="group" aria-labelledby="arena-explanation-heading" className="space-y-2">
-              {explanations.map((text, i) => {
-                const selected = explanation === text;
-                return (
-                  <button
-                    key={text}
-                    type="button"
-                    onClick={() => setExplanation(text)}
-                    aria-pressed={selected}
-                    disabled={submitting || finished}
-                    className={`w-full text-left p-3 sm:p-4 rounded-lg border-2 transition-colors ${focusRing} disabled:opacity-70 ${
-                      selected
-                        ? 'border-teal-500 bg-teal-50 text-teal-900'
-                        : 'border-gray-200 bg-white hover:border-teal-200 hover:bg-teal-50/50'
-                    }`}
-                    data-testid={`arena-explanation-${i}`}
-                  >
-                    <div className="flex items-start gap-3">
-                      <span
-                        className={`shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-full text-sm font-semibold ${
-                          selected ? 'bg-teal-600 text-white' : 'bg-gray-100 text-gray-700'
-                        }`}
-                        aria-hidden="true"
-                      >
-                        {selected ? <CheckCircle2 className="w-4 h-4" /> : optionLetter(i)}
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="sr-only">Option {optionLetter(i)}: </span>
-                        <span className="whitespace-pre-wrap break-words">{text}</span>
-                        {selected && (
-                          <span className="mt-1 flex items-center gap-1 text-xs font-semibold text-teal-700">
-                            <CheckCircle2 className="w-3 h-3" aria-hidden="true" /> Your diagnosis
-                          </span>
-                        )}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
-
-        <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
-          <Button
-            variant="outline"
-            onClick={onExit}
-            disabled={submitting}
-            className={focusRing}
-            data-testid="exit-arena-btn"
-          >
-            <LogOut className="w-4 h-4" aria-hidden="true" /> Exit
-          </Button>
-          <div className="flex flex-col sm:items-end gap-1">
-            <Button
-              onClick={submit}
-              disabled={!canSubmit}
-              aria-describedby={!ready && !expired ? 'arena-submit-hint' : undefined}
-              className={`bg-rose-600 hover:bg-rose-700 text-white ${focusRing}`}
-              data-testid="submit-arena-btn"
-            >
-              <Send className="w-4 h-4" aria-hidden="true" />
-              {submitting ? 'Submitting…' : expired && !ready ? 'Submit what I have' : 'Submit diagnosis'}
-            </Button>
-            {!ready && !expired && (
-              <p id="arena-submit-hint" className="text-xs text-gray-500 text-center sm:text-right">
-                Pick a step and an explanation to submit.
-              </p>
-            )}
+            ))}
           </div>
+        ) : (
+          <GraphPaper role="group" aria-labelledby="arena-step-heading" className="mt-3">
+            {steps.map((text, i) => stepButton(text, i))}
+          </GraphPaper>
+        )}
+      </section>
+
+      <section className={cn('mt-8', journal && 'max-w-[760px]')} data-testid="arena-explanations-card">
+        <h2
+          id="arena-explanation-heading"
+          className={cn('font-sans text-base font-semibold', step === null && 'text-ink-muted')}
+        >
+          {whyHeading}
+        </h2>
+        <div role="group" aria-labelledby="arena-explanation-heading" className="mt-3 flex flex-col gap-2">
+          {explanations.map((text, i) => {
+            const selected = explanation === text;
+            return (
+              <button
+                key={text}
+                type="button"
+                onClick={() => setExplanation(text)}
+                aria-pressed={selected}
+                disabled={submitting || finished}
+                className={cn(
+                  'min-h-12 w-full rounded-md border bg-surface px-4 py-3 text-left transition-colors disabled:cursor-not-allowed',
+                  selected
+                    ? 'border-brand-ink bg-brand-tint ring-1 ring-inset ring-brand-ink'
+                    : 'border-rule-strong hover:border-ink'
+                )}
+                data-testid={`arena-explanation-${i}`}
+              >
+                <span className="sr-only">Option {optionLetter(i)}: </span>
+                <span className="whitespace-pre-wrap break-words">{text}</span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      <div
+        className={cn(
+          'mt-8 flex flex-col gap-3 border-t border-rule pt-4 sm:flex-row sm:items-center sm:justify-between',
+          journal && 'max-w-[760px]'
+        )}
+      >
+        <p id="arena-submit-hint" aria-live="polite" className={cn('text-ink-muted', ready && 'text-ink')}>
+          {guide}
+        </p>
+        <div className="flex items-center justify-between gap-2 sm:justify-end">
+          <Button variant="ghost" onClick={onExit} disabled={submitting} data-testid="exit-arena-btn">
+            <LogOut aria-hidden="true" /> Exit
+          </Button>
+          <Button
+            onClick={submit}
+            disabled={!canSubmit}
+            aria-describedby={!ready && !expired ? 'arena-submit-hint' : undefined}
+            className="min-w-[8.5rem]"
+            data-testid="submit-arena-btn"
+          >
+            {submitting ? 'Submitting...' : expired && !ready ? 'Submit what I have' : 'Submit'}
+          </Button>
         </div>
       </div>
     </div>
