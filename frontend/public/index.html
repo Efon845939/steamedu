@@ -3,7 +3,7 @@
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="theme-color" content="#000000" />
+        <meta name="theme-color" content="#f8faf9" />
         <meta name="description" content="STEAM Hub: quizzes, hands-on activities and idea sharing for students and teachers" />
         <!--
       manifest.json provides metadata used when your web app is installed on a
@@ -19,6 +19,29 @@
       Learn how to configure a non-root public URL by running `npm run build`.
     -->
         <title>STEAM Hub</title>
+        <script>
+            // Appearance: apply saved theme settings before React mounts (no colour flash).
+            // Keep in sync with src/lib/theme.js.
+            (function () {
+                var root = document.documentElement;
+                var s = {};
+                try {
+                    s = JSON.parse(window.localStorage.getItem('steamhub:theme') || '{}') || {};
+                } catch (e) {}
+                var ages = { explorer: 'violet', lab: 'emerald', pro: 'indigo' };
+                var age = ages[s.age] ? s.age : (ages[s.resolvedAge] ? s.resolvedAge : 'lab');
+                var accent = s.accent && s.accent !== 'auto' ? s.accent : (s.resolvedAccent || ages[age]);
+                root.setAttribute('data-age', age);
+                root.setAttribute('data-accent', accent);
+                root.setAttribute('data-text', s.text === 'lg' ? 'lg' : 'md');
+                var dark = s.mode === 'dark';
+                if (s.mode === 'system') {
+                    try { dark = window.matchMedia('(prefers-color-scheme: dark)').matches; } catch (e) {}
+                }
+                if (dark) root.classList.add('dark');
+                if (s.motion === 'calm') root.classList.add('calm-motion');
+            })();
+        </script>
         <script>
             // Lite mode: decide before React mounts so the first paint already matches,
             // and only download the Inter web font when lite mode is off.

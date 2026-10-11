@@ -9,6 +9,7 @@ import NotFoundPage from './components/NotFoundPage';
 import Navbar from './components/Navbar';
 import { ChunkErrorBoundary, PageFallback } from './components/ChunkErrorBoundary';
 import { Toaster } from './components/ui/sonner';
+import { ThemeProvider } from './lib/theme';
 
 // Everything past the landing and login pages loads on demand, so a slow connection
 // only downloads the code for the page the student actually opens.
@@ -32,7 +33,11 @@ export const AuthContext = React.createContext();
 // Reset the error boundary on navigation, so one failed page doesn't block the rest of the app
 const RouteBoundary = ({ children }) => {
   const location = useLocation();
-  return <ChunkErrorBoundary key={location.pathname}>{children}</ChunkErrorBoundary>;
+  return (
+    <ChunkErrorBoundary key={location.pathname}>
+      <div className="page-enter">{children}</div>
+    </ChunkErrorBoundary>
+  );
 };
 
 function App() {
@@ -75,10 +80,10 @@ function App() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-100 flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading...</p>
+          <div className="animate-spin rounded-full h-10 w-10 border-2 border-emerald-200 border-t-emerald-600 mx-auto mb-4"></div>
+          <p className="text-sm text-gray-500">Loading...</p>
         </div>
       </div>
     );
@@ -86,35 +91,37 @@ function App() {
 
   return (
     <AuthContext.Provider value={{ user, setUser, login, logout, API }}>
-      <div className="App">
-        <BrowserRouter>
-          <Navbar />
-          <RouteBoundary>
-            <Suspense fallback={<PageFallback />}>
-              <Routes>
-                <Route path="/" element={<HomePage />} />
-                <Route path="/auth" element={user ? <Navigate to="/dashboard" /> : <AuthPage />} />
-                <Route path="/dashboard" element={user ? <Dashboard /> : <Navigate to="/auth" />} />
-                <Route path="/quiz/:id?" element={user ? <QuizPage /> : <Navigate to="/auth" />} />
-                <Route path="/activities" element={user ? <ActivitiesPage /> : <Navigate to="/auth" />} />
-                <Route path="/ideas" element={user ? <IdeasPage /> : <Navigate to="/auth" />} />
-                <Route path="/ideas/:id" element={user ? <IdeaDetailPage /> : <Navigate to="/auth" />} />
-                <Route path="/leaderboard" element={user ? <LeaderboardPage /> : <Navigate to="/auth" />} />
-                <Route path="/contests" element={user ? <ContestsPage /> : <Navigate to="/auth" />} />
-                <Route path="/tournaments" element={<Navigate to="/contests" />} />
-                <Route
-                  path="/arena/worksheet"
-                  element={user ? (user.role === 'teacher' ? <WorksheetPage /> : <Navigate to="/arena" />) : <Navigate to="/auth" />}
-                />
-                <Route path="/arena/:id?" element={user ? <ArenaPage /> : <Navigate to="/auth" />} />
-                <Route path="/content" element={<ContentHub />} />
-                <Route path="*" element={<NotFoundPage />} />
-              </Routes>
-            </Suspense>
-          </RouteBoundary>
-        </BrowserRouter>
-        <Toaster position="top-center" richColors />
-      </div>
+      <ThemeProvider user={user}>
+        <div className="App">
+          <BrowserRouter>
+            <Navbar />
+            <RouteBoundary>
+              <Suspense fallback={<PageFallback />}>
+                <Routes>
+                  <Route path="/" element={<HomePage />} />
+                  <Route path="/auth" element={user ? <Navigate to="/dashboard" /> : <AuthPage />} />
+                  <Route path="/dashboard" element={user ? <Dashboard /> : <Navigate to="/auth" />} />
+                  <Route path="/quiz/:id?" element={user ? <QuizPage /> : <Navigate to="/auth" />} />
+                  <Route path="/activities" element={user ? <ActivitiesPage /> : <Navigate to="/auth" />} />
+                  <Route path="/ideas" element={user ? <IdeasPage /> : <Navigate to="/auth" />} />
+                  <Route path="/ideas/:id" element={user ? <IdeaDetailPage /> : <Navigate to="/auth" />} />
+                  <Route path="/leaderboard" element={user ? <LeaderboardPage /> : <Navigate to="/auth" />} />
+                  <Route path="/contests" element={user ? <ContestsPage /> : <Navigate to="/auth" />} />
+                  <Route path="/tournaments" element={<Navigate to="/contests" />} />
+                  <Route
+                    path="/arena/worksheet"
+                    element={user ? (user.role === 'teacher' ? <WorksheetPage /> : <Navigate to="/arena" />) : <Navigate to="/auth" />}
+                  />
+                  <Route path="/arena/:id?" element={user ? <ArenaPage /> : <Navigate to="/auth" />} />
+                  <Route path="/content" element={<ContentHub />} />
+                  <Route path="*" element={<NotFoundPage />} />
+                </Routes>
+              </Suspense>
+            </RouteBoundary>
+          </BrowserRouter>
+          <Toaster position="top-center" richColors />
+        </div>
+      </ThemeProvider>
     </AuthContext.Provider>
   );
 }
