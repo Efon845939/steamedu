@@ -387,7 +387,11 @@ async def login(user_data: UserLogin, request: Request):
     recent_failures = await db.login_failures.count_documents({"key": fail_key, "at": {"$gt": cutoff}})
     if recent_failures >= LOGIN_FAIL_MAX:
         raise HTTPException(status_code=429, detail="Too many failed login attempts. Please try again in a few minutes.")
-    user = await db.users.find_one({"username": user_data.username})
+    username = user_data.username.strip()
+    user = await db.users.find_one({"username": username})
+    if not user and username != username.lower():
+        # Phone keyboards turn "pilota01" into "Pilota01"; fall back to the all-lowercase account if one exists
+        user = await db.users.find_one({"username": username.lower()})
     if not user or not verify_password(user_data.password, user["password"]):
         await db.login_failures.insert_one({"key": fail_key, "at": datetime.now(timezone.utc)})
         raise HTTPException(status_code=401, detail="Invalid credentials")
@@ -544,7 +548,8 @@ WORKSHEET_MAX_ITEMS = 10
 
 # Whitelist: anything else on a challenge (answers, author ids, review notes, stats) never reaches solvers.
 _PUBLIC_ARENA_FIELDS = ("id", "title", "subject", "age_groups", "time_limit_seconds", "problem", "steps",
-                        "explanations", "source", "author_name", "created_at", "difficulty_rating")
+                        "explanations", "source", "author_name", "created_at", "difficulty_rating",
+                        "tr")  # tr is rebuilt by _public_tr, never copied as stored
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 
 
@@ -566,7 +571,19 @@ def _public_challenge(challenge: dict, viewer_id: str) -> dict:
     out["created_at"] = str(challenge.get("created_at") or "")  # seeds store a datetime
     out["difficulty_rating"] = challenge.get("difficulty_rating", RATING_START)
     out["explanations"] = _shuffled(challenge.get("explanations", []), f"{challenge['id']}:{viewer_id}")
+    out["tr"] = _public_tr(challenge)
     return out
+
+
+def _public_tr(challenge: dict) -> Optional[dict]:
+    """Turkish text a solver may see before answering. The debrief stays back like the English one, and
+    explanations map English text to Turkish, so the client still submits the English option it graded on."""
+    tr = challenge.get("tr")
+    if not isinstance(tr, dict) or _is_peer(challenge):
+        return None
+    english = challenge.get("explanations", [])
+    return {"title": tr.get("title"), "problem": tr.get("problem"), "steps": tr.get("steps"),
+            "explanations": dict(zip(english, tr.get("explanations") or []))}
 
 
 def _author_view(challenge: dict) -> dict:
@@ -823,6 +840,7 @@ async def submit_arena_attempt(challenge_id: str, data: ArenaAttemptSubmit,
             "correct_explanation": challenge["correct_explanation"],
             "misconception": _misconception_info(challenge["misconception"]),
             "debrief": challenge["debrief"],
+            "debrief_tr": None if peer else (challenge.get("tr") or {}).get("debrief"),
             "source": "peer" if peer else "system", "author_name": challenge.get("author_name") if peer else None,
             "rating": rating, "community": community,
             "points_earned": points_earned, "streak_days": streak,

@@ -1104,3 +1104,169 @@ DEMO_IDEAS = [
         "category": "Science",
     },
 ]
+
+# Turkish text for the Debug Arena, keyed by the English title. explanations[i] translates the English
+# explanations[i]; the server maps them by text, so grading never depends on the language shown.
+# Like the English set, the right explanation is never noticeably longer than the wrong ones.
+ARENA_TR = {
+    "The Top of the Throw": {
+        "title": "Atışın Tepe Noktası",
+        "problem": "0,5 kg'lık bir top dik olarak yukarı atılıyor. Hava direncini ihmal edersek, en yüksek noktada topa etki eden net kuvvet nedir? (g = 9,8 m/s²)",
+        "steps": [
+            "Top elden çıktıktan sonra ona etki eden tek kuvvet yer çekimidir.",
+            "Yukarı çıkarken yer çekimi topu her saniye 9,8 m/s yavaşlatır.",
+            "En yüksek noktada top bir anlığına yükselmeyi bırakır, yani hızı 0 m/s olur.",
+            "Hız sıfır olduğuna göre, o anda topa etki eden net kuvvet de sıfır olmalıdır: 0 N.",
+        ],
+        "explanations": [
+            "Sıfır hız sıfır kuvvet demek değil: yer çekimi hâlâ aşağı çeker, net kuvvet mg ≈ 4,9 N.",
+            "Top yukarı çıkmayı bıraktığı için, tepe noktasında yer çekimi bir anlığına kapanır.",
+            "Atışın itme kuvveti tepe noktasında hâlâ etki eder ve yer çekimini tam olarak dengeler.",
+        ],
+        "debrief": "Hız ve kuvvet farklı şeylerdir. Tepede topun hızı bir anlığına sıfırdır ama yer çekimi hiç durmaz: net kuvvet = mg = 0,5 × 9,8 = 4,9 N, aşağı yönde. Top bu yüzden hemen düşmeye başlar: hızı sıfır olduğu anda bile değişmeye devam eder.",
+    },
+    "An Astronaut on the Moon": {
+        "title": "Ay'daki Astronot",
+        "problem": "Bir astronotun Dünya'daki kütlesi 60 kg. Ay'daki kütlesi ve ağırlığı nedir? (Dünya'da g = 9,8 m/s², Ay'da g ≈ 1,6 m/s²)",
+        "steps": [
+            "Dünya'daki ağırlığı G = m × g = 60 × 9,8 = 588 N.",
+            "Ay'ın yer çekimi Dünya'nınkinin yaklaşık altıda biridir (1,6 ÷ 9,8 ≈ 0,16).",
+            "Yer çekimi yaklaşık altı kat zayıf olduğu için Ay'daki kütlesi 60 ÷ 6 = 10 kg olur.",
+            "Ay'daki ağırlığı G = m × g = 10 × 1,6 = 16 N.",
+            "Yani Ay'da kütlesi 10 kg, ağırlığı 16 N'dur.",
+        ],
+        "explanations": [
+            "Kütle madde miktarıdır, Ay'da da 60 kg kalır; yer çekimiyle sadece ağırlık değişir.",
+            "Ağırlık newton cinsinden kütledir, her yerde 588 N kalır; değişen sadece kütlesidir.",
+            "Ağırlık kütle g'ye bölünerek bulunur, yani Ay'daki ağırlığı 60 ÷ 1,6 = 37,5 N olur.",
+        ],
+        "debrief": "Kütle bir cismin ne kadar madde (ve eylemsizlik) içerdiğini ölçer, bu yüzden her yerde 60 kg'dır. Ağırlık yer çekiminin o kütleye uyguladığı kuvvettir: Ay'da G = 60 × 1,6 ≈ 96 N, yani Dünya'daki 588 N'luk ağırlığının yaklaşık altıda biri.",
+    },
+    "Tracing Variables": {
+        "title": "Değişkenleri Takip Etmek",
+        "problem": "Bu program ne yazdırır?\n\na = 5\nb = a\na = 7\nprint(b)",
+        "steps": [
+            "a = 5, a'nın içine 5 değerini koyar.",
+            "b = a, b'ye a'nın değerini, yani 5'i verir.",
+            "a = 7, a'yı 7 yapar. b, a'ya eşitlendiği için b de 7 olur.",
+            "Bu yüzden print(b) 7 yazdırır.",
+        ],
+        "explanations": [
+            "b = a o andaki 5 değerini kopyalar; a sonradan değişse de b 5 olarak kalır.",
+            "print(b) değişkenin adını gösterir, yani program bir sayı değil b harfini yazdırır.",
+            "Python bir değişkene iki kez değer atamaya izin vermez, program a = 7'de hata verir.",
+        ],
+        "debrief": "b = a, a'nın o anki değerini (5) kopyalar. a'ya sonradan yeni bir değer vermek geriye dönüp b'yi değiştirmez, bu yüzden program 5 yazdırır. (Liste gibi değiştirilebilir tek bir nesneyi paylaşan iki isim farklı davranır, ama burada sadece bir sayıyı yeniden atıyoruz.)",
+    },
+    "How Long Is the Download?": {
+        "title": "İndirme Ne Kadar Sürer?",
+        "problem": "İnternet paketin 100 Mbps. Ek yükleri ihmal edersek, 600 MB'lık bir oyun güncellemesini indirmek ne kadar sürer?",
+        "steps": [
+            "Dosya 600 MB (megabayt), bağlantı hızı 100 Mbps.",
+            "100 Mbps, saniyede 100 megabayt demektir.",
+            "İndirme süresi, dosya boyutunun hıza bölünmesiyle bulunur.",
+            "Süre = 600 MB ÷ 100 MB/s = 6 saniye.",
+        ],
+        "explanations": [
+            "Mbps megabit demek; 1 bayt 8 bittir, yani 100 Mbps 12,5 MB/s eder ve indirme 48 s sürer.",
+            "İndirme süresi hız ile dosya boyutunun çarpımıdır, cevap 600 × 100 saniye olmalı.",
+            "1 MB 1024 Mb'ye eşittir, yani 100 Mbps saniyede 100 megabayttan çok daha hızlıdır.",
+        ],
+        "debrief": "Küçük b bit, büyük B bayt demektir; 1 bayt = 8 bit. 100 Mbps ÷ 8 = 12,5 MB/s, yani güncelleme ideal koşullarda yaklaşık 600 ÷ 12,5 = 48 saniye sürer: hatalı cevabın sekiz katı.",
+    },
+    "Two Bulbs in Series": {
+        "title": "Seri Bağlı İki Ampul",
+        "problem": "Bir pil, seri bağlı (tek bir halkada art arda) iki özdeş ampule bağlanıyor. İki ampulün parlaklığı nasıl karşılaştırılır?",
+        "steps": [
+            "Seri devrede tek bir yol vardır, yani yük önce A ampulünden, sonra B ampulünden geçer.",
+            "A ampulü ışık üretmek için akımın bir kısmını tüketir, B ampulüne daha az akım kalır.",
+            "Bu yüzden B ampulü A ampulünden daha sönük yanar.",
+            "Halkaya eklenecek üçüncü bir ampul hepsinden sönük yanar.",
+        ],
+        "explanations": [
+            "Akım tükenmez: iki ampulden de aynı akım geçer, ampuller sadece enerji aktarır.",
+            "B pilden daha uzakta olduğu için kablo boyunca ona daha az gerilim ulaşır.",
+            "Özdeş ampuller seri bağlanınca farklı dirence sahip olur, bu yüzden eşit parlayamazlar.",
+        ],
+        "debrief": "Yük korunur, bu yüzden tek halkalı bir devrede akım her yerde aynıdır. Ampullerin aldığı şey yüklerin taşıdığı enerjidir ve bu her ampulde bir gerilim düşüşü olarak görünür. Özdeş ampuller aynı akımı ve gerilimden aynı payı alır, bu yüzden eşit parlaklıkta yanarlar.",
+    },
+    "Does a Lever Save Work?": {
+        "title": "Kaldıraç İşten Tasarruf Ettirir mi?",
+        "problem": "Bir kaldıraçla 200 N'luk bir kayayı 0,1 m kaldırıyorsun ve sadece 50 N ile aşağı bastırıyorsun. Ne kadar iş yaparsın? (İdeal, sürtünmesiz bir kaldıraç varsay.)",
+        "steps": [
+            "Kayayı kaldırırken yapılan iş = kuvvet × yol = 200 N × 0,1 m = 20 J.",
+            "Kaldıraç 50 N ile bastırmanı sağlar, bu kayanın ağırlığından 4 kat az.",
+            "Kuvvetin 4 kat küçük olduğu için sadece 20 J ÷ 4 = 5 J iş yaparsın, 15 J tasarruf edersin.",
+        ],
+        "explanations": [
+            "Kaldıraç kuvveti yolla takas eder: 4 kat az kuvvetle 0,4 m bastırırsın, iş yine 20 J.",
+            "Kayaya yapılan iş kuvvetin yola bölümüdür, 200 N ÷ 0,1 m; ilk adım zaten yanlış.",
+            "Kaldıraç fazladan hareket ettirilecek uzunluk ekler, yani 20 J'den fazla iş yaparsın.",
+        ],
+        "debrief": "Basit makineler gereken kuvveti azaltır, işi değil. 4:1'lik bir kaldıraçla 0,4 m boyunca 50 N bastırırsın: 50 × 0,4 = 20 J, kayayı doğrudan kaldırmakla aynı. Gerçek bir kaldıraç sürtünmeyle biraz kayıp verir, bu yüzden yaptığın iş 20 J'den biraz fazladır, asla az değil.",
+    },
+    "Classifying The Starry Night": {
+        "title": "Yıldızlı Gece'yi Sınıflandırmak",
+        "problem": "Vincent van Gogh'un Yıldızlı Gece (1889) tablosu hangi sanat akımına aittir?",
+        "steps": [
+            "Yıldızlı Gece, Vincent van Gogh tarafından Haziran 1889'da, Fransa'da Saint-Rémy-de-Provence'taki akıl hastanesinde kalırken yapıldı.",
+            "Tabloda küçük bir köyün üzerinde girdap gibi dönen bir gece göğü ve ön planda uzun bir servi ağacı var.",
+            "Boya kalın, açıkça görünen fırça darbeleriyle sürülmüş.",
+            "Görünür fırça darbeleri İzlenimciliğin tanımlayıcı özelliğidir, yani Yıldızlı Gece İzlenimci bir tablodur.",
+        ],
+        "explanations": [
+            "Tek bir yüzey özelliği akımı belirlemez; van Gogh İzlenimci değil, Post-İzlenimcidir.",
+            "Kübist bir tablodur, çünkü yıldızlar ve köy basit geometrik şekillere bölünmüştür.",
+            "Rönesans'a aittir, çünkü tuval üzerine yağlı boyadır ve gerçekçi bir gökyüzü vardır.",
+        ],
+        "debrief": "Görünür fırça darbeleri birçok üslupta vardır, tek başına pek bir şey kanıtlamaz. Claude Monet gibi İzlenimciler, gözlemledikleri değişen doğal ışığı yakalamak için hızlı darbeler kullandı. Post-İzlenimci van Gogh ise rengi ve çizgiyi duyguyu anlatmak için zorladı: Yıldızlı Gece, penceresinden gördüğünü hafıza ve hayal gücüyle birleştirir ve girdaplı gökyüzü kimsenin gerçekten görebileceği bir şey değildir.",
+    },
+    "Mixing Red, Green and Blue Paint": {
+        "title": "Kırmızı, Yeşil ve Mavi Boyayı Karıştırmak",
+        "problem": "Bir öğrenci eşit miktarda kırmızı, yeşil ve mavi boyayı karıştırıyor. Hangi rengi elde eder?",
+        "steps": [
+            "Bir ekranda tam güçteki kırmızı, yeşil ve mavi ışık birleşince beyaz olur.",
+            "Boya da ışıkla aynı renk karışımı kurallarına uyar, yani kırmızı, yeşil ve mavi boya da beyaz yapar.",
+            "Öğrenci beyaz boya elde eder.",
+        ],
+        "explanations": [
+            "Işık renkleri toplar ama pigmentler ışığı soğurur, karışım beyaz değil koyu bir renk olur.",
+            "Ekranlar aslında kırmızı, sarı ve maviyi ana renk olarak kullanır; ilk adım yanlış renkleri anlatıyor.",
+            "Boyada sonuç hangi rengi önce eklediğine bağlıdır, yani üçünden herhangi biri olabilir.",
+        ],
+        "debrief": "Renkli ışıklar toplanır, bu yüzden kırmızı, yeşil ve mavi ışık gözümüze beyaz olarak ulaşır. Boya tersi şekilde çalışır: her pigment ışığın bir kısmını soğurur (çıkarır), bu yüzden daha çok pigment karıştırmak daha az ışık yansıtır. Kırmızı, yeşil ve mavi boya koyu, çamurlu bir kahverengi verir. Ressamlar ve matbaacılar bu yüzden farklı ana renkler (camgöbeği, eflatun ve sarı gibi) kullanır.",
+    },
+    "Adding Fractions in a Recipe": {
+        "title": "Tarifte Kesir Toplamak",
+        "problem": "Bir tarifte 1/2 su bardağı süt ve 1/3 su bardağı su kullanılıyor. Toplam ne kadar sıvı eder?",
+        "steps": [
+            "Kesirleri toplamak için payları ve paydaları ayrı ayrı topla: 1/2 + 1/3 = (1 + 1)/(2 + 3).",
+            "Bu 2/5 eder.",
+            "Yani tarifte toplam 2/5 su bardağı sıvı kullanılır.",
+        ],
+        "explanations": [
+            "Önce paydalar eşitlenmeli: 1/2 + 1/3 = 3/6 + 2/6 = 5/6 su bardağı.",
+            "Tarifte miktarlar birleşirken kesirler çarpılır: 1/2 × 1/3 = 1/6 su bardağı.",
+            "Kesir toplamak paydayı büyütür, yani toplam iki miktardan da küçük olmalı.",
+        ],
+        "debrief": "2/5, 1/2'den küçüktür, yani toplam parçalarından birinden küçük çıkardı. Payda parçaların büyüklüğünü söyler ve sadece aynı büyüklükteki parçaları toplayabilirsin: 1/2 = 3/6 ve 1/3 = 2/6, toplam 5/6 su bardağı.",
+    },
+    "Price Up, Then on Sale": {
+        "title": "Önce Zam, Sonra İndirim",
+        "problem": "Bir mont 100 TL. Mağaza fiyatı %20 artırıyor, bir hafta sonra da %20 indirime sokuyor. Son fiyat nedir?",
+        "steps": [
+            "%20 artıştan sonra fiyat 100 × 1,20 = 120 TL olur.",
+            "%20 artış ve ardından %20 azalış birbirini götürür, çünkü yüzdeler aynıdır.",
+            "Yani son fiyat yine 100 TL olur.",
+        ],
+        "explanations": [
+            "%20 indirim 120 TL'den alınır, yani 20 değil 24 TL düşer ve son fiyat 96 TL olur.",
+            "Aynı yüzde bir fiyata iki kez uygulanamaz, yani indirim fiyatı değiştirmez.",
+            "100 TL'ye %20 zam 20 kuruş eklemek demektir, yani zamdan sonra fiyat 100,20 TL olur.",
+        ],
+        "debrief": "Her yüzde o anki fiyata uygulanır. 120 TL'nin %20'si 24 TL'dir, yani indirimli fiyat 96 TL olur. Genel olarak %p artış ve ardından %p indirim fiyatı (1 + p/100)(1 − p/100) = 1 − (p/100)² ile çarpar ve bu her p > 0 için 1'den küçüktür (burada 1,2 × 0,8 = 0,96).",
+    },
+}
+
+for _challenge in ARENA_CHALLENGES:
+    _challenge["tr"] = ARENA_TR[_challenge["title"]]

@@ -126,3 +126,47 @@ def test_unasked_confidence_still_counts(client, teacher, quiz):
     r = client.post(f"/api/quizzes/{quiz['id']}/attempt", json={"answers": answers}, headers=plain)
     assert [m["tag"] for m in r.json()["misconceptions"]] == [TAG]
     assert r.json()["guessed_misconceptions"] == []
+
+
+# ---------------- Debug Arena in Turkish ----------------
+from seed_data import ARENA_CHALLENGES  # noqa: E402
+
+
+def test_every_arena_scenario_has_matching_turkish_text():
+    n = len(ARENA_CHALLENGES)
+    longest = 0
+    for c in ARENA_CHALLENGES:
+        tr = c["tr"]
+        assert tr["title"] and tr["problem"] and tr["debrief"]
+        assert len(tr["steps"]) == len(c["steps"])
+        assert len(tr["explanations"]) == len(c["explanations"]) == len(set(tr["explanations"]))
+        # The Turkish options must not bring back the "pick the longest" cue the English set removed
+        right = tr["explanations"][c["explanations"].index(c["correct_explanation"])]
+        others = [e for e in tr["explanations"] if e != right]
+        longest += len(right) > max(len(e) for e in others)
+        assert len(right) <= 1.2 * min(len(e) for e in tr["explanations"]), c["title"]
+    assert longest <= n // 2
+
+
+def test_arena_serves_turkish_without_leaking_the_debrief(client, teacher):
+    student = _student(client, teacher, "arena_tr")
+    rows = client.get("/api/arena/challenges", headers=student).json()
+    ch = next(r for r in rows if r["title"] == "The Top of the Throw")
+    seed = next(c for c in ARENA_CHALLENGES if c["title"] == "The Top of the Throw")
+    assert ch["tr"]["title"] == seed["tr"]["title"] and ch["tr"]["steps"] == seed["tr"]["steps"]
+    assert set(ch["tr"]["explanations"]) == set(ch["explanations"])  # keyed by the English option
+    assert "debrief" not in ch["tr"] and "debrief" not in ch
+
+    r = client.post(f"/api/arena/challenges/{ch['id']}/attempt", headers=student,
+                    json={"selected_step": seed["flawed_step"], "selected_explanation": seed["correct_explanation"]})
+    assert r.status_code == 200 and r.json()["score"] == 100
+    assert r.json()["debrief_tr"] == seed["tr"]["debrief"]
+    assert r.json()["misconception"]["description_tr"]
+
+
+def test_login_survives_phone_autocapitalize(client):
+    _register(client, "pilota99")
+    for typed in ("Pilota99", "pilota99 ", "PILOTA99"):
+        r = client.post("/api/auth/login", json={"username": typed, "password": "Passw0rd!x"})
+        assert r.status_code == 200, typed
+    assert client.post("/api/auth/login", json={"username": "Pilota99", "password": "wrong"}).status_code == 401
