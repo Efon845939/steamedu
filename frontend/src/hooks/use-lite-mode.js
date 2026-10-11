@@ -2,17 +2,15 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 
 // Lite (low-bandwidth) mode.
 // - public/index.html sets <html class="lite"> before React mounts and only loads the
-//   Inter web font when lite is off, so the first paint already matches the setting.
-// - This provider keeps that class in sync, remembers an explicit choice in
-//   localStorage ('1' / '0') and loads the web font on demand when lite is switched off.
+//   theme's web fonts when lite is off, so the first paint already matches the setting.
+// - This provider keeps that class in sync and remembers an explicit choice in
+//   localStorage ('1' / '0'). lib/theme.js loads the fonts when lite is switched off
+//   and turns motion off while lite is on.
 // - Components read { lite } to skip network-heavy things (e.g. photos) entirely:
 //   hiding an <img> with CSS still downloads it.
 
 export const LITE_STORAGE_KEY = 'steamhub:lite';
 const LITE_CLASS = 'lite';
-const FONT_LINK_ID = 'inter-font';
-const FONT_HREF = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap';
-const FONT_ORIGIN = 'https://fonts.gstatic.com';
 
 const isSlowConnection = () => {
   try {
@@ -42,26 +40,6 @@ const getInitialLite = () => {
   return isSlowConnection();
 };
 
-const ensureInterFont = () => {
-  if (typeof document === 'undefined' || document.getElementById(FONT_LINK_ID)) return;
-  try {
-    if (!document.querySelector(`link[rel="preconnect"][href="${FONT_ORIGIN}"]`)) {
-      const preconnect = document.createElement('link');
-      preconnect.rel = 'preconnect';
-      preconnect.href = FONT_ORIGIN;
-      preconnect.crossOrigin = 'anonymous';
-      document.head.appendChild(preconnect);
-    }
-    const font = document.createElement('link');
-    font.id = FONT_LINK_ID;
-    font.rel = 'stylesheet';
-    font.href = FONT_HREF;
-    document.head.appendChild(font);
-  } catch (e) {
-    // Font is cosmetic; the system font stack is the fallback.
-  }
-};
-
 const LiteModeContext = createContext({ lite: false, setLite: () => {}, toggleLite: () => {} });
 
 export const LiteModeProvider = ({ children }) => {
@@ -72,7 +50,6 @@ export const LiteModeProvider = ({ children }) => {
 
   useEffect(() => {
     document.documentElement.classList.toggle(LITE_CLASS, lite);
-    if (!lite) ensureInterFont();
     if (!userChoseRef.current) return;
     try {
       window.localStorage.setItem(LITE_STORAGE_KEY, lite ? '1' : '0');

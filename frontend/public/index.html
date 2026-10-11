@@ -1,47 +1,79 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-age="16-18">
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="theme-color" content="#000000" />
-        <meta name="description" content="STEAM Hub: quizzes, hands-on activities and idea sharing for students and teachers" />
-        <!--
-      manifest.json provides metadata used when your web app is installed on a
-      user's mobile device or desktop. See https://developers.google.com/web/fundamentals/web-app-manifest/
-    -->
-        <!--
-      Notice the use of %PUBLIC_URL% in the tags above.
-      It will be replaced with the URL of the `public` folder during the build.
-      Only files inside the `public` folder can be referenced from the HTML.
-
-      Unlike "/favicon.ico" or "favicon.ico", "%PUBLIC_URL%/favicon.ico" will
-      work correctly both with client-side routing and a non-root public URL.
-      Learn how to configure a non-root public URL by running `npm run build`.
-    -->
+        <meta name="theme-color" content="#F2F5F7" />
+        <meta name="description" content="STEAM Hub: short diagnostics that find the wrong idea, Debug Arena practice, and a misconception X-ray for teachers" />
         <title>STEAM Hub</title>
         <script>
-            // Lite mode: decide before React mounts so the first paint already matches,
-            // and only download the Inter web font when lite mode is off.
-            // Keep in sync with src/hooks/use-lite-mode.js.
+            // Display settings, decided before React mounts so the first paint already
+            // matches (no flash of the wrong theme or mode). Keep in sync with src/lib/theme.js
+            // (storage keys, defaults, attribute names, font URLs).
             (function () {
                 var doc = document;
-                var lite = false;
-                try {
-                    var stored = null;
+                var root = doc.documentElement;
+                var get = function (key) {
                     try {
-                        stored = window.localStorage.getItem('steamhub:lite');
-                    } catch (e) {}
-                    if (stored === '1') {
-                        lite = true;
-                    } else if (stored !== '0') {
+                        return window.localStorage.getItem(key);
+                    } catch (e) {
+                        return null;
+                    }
+                };
+                var matches = function (query) {
+                    try {
+                        return window.matchMedia(query).matches;
+                    } catch (e) {
+                        return false;
+                    }
+                };
+
+                // Lite mode: an explicit choice wins, else a slow or Save-Data connection.
+                var lite = false;
+                var storedLite = get('steamhub:lite');
+                if (storedLite === '1') {
+                    lite = true;
+                } else if (storedLite !== '0') {
+                    try {
                         var connection = navigator.connection;
                         lite = !!(connection && (connection.saveData || /(^|-)2g$/.test(connection.effectiveType || '')));
-                    }
-                } catch (e) {}
-                if (lite) {
-                    doc.documentElement.classList.add('lite');
-                    return;
+                    } catch (e) {}
                 }
+                if (lite) root.classList.add('lite');
+
+                // The theme is fixed by the account. Until the app knows who is signed in,
+                // reuse the theme this browser showed last (logged out: 16-18).
+                var age = get('steamhub:age');
+                if (['13-15', '16-18', '18+', 'teacher'].indexOf(age) < 0) age = '16-18';
+                root.setAttribute('data-age', age);
+
+                var s = {};
+                try {
+                    s = JSON.parse(get('steamhub:display') || '{}') || {};
+                } catch (e) {}
+
+                var dark = s.mode === 'dark' || (s.mode !== 'light' && matches('(prefers-color-scheme: dark)'));
+                root.classList.toggle('dark', dark);
+                root.setAttribute('data-mode', dark ? 'dark' : 'light');
+                root.setAttribute('data-text', ['s', 'm', 'l'].indexOf(s.text) >= 0 ? s.text : 'm');
+
+                var motion = ['full', 'reduced', 'off'].indexOf(s.motion) >= 0
+                    ? s.motion
+                    : (matches('(prefers-reduced-motion: reduce)') ? 'reduced' : 'full');
+                root.setAttribute('data-motion', lite ? 'off' : motion);
+
+                var density = ['comfortable', 'compact'].indexOf(s.density) >= 0
+                    ? s.density
+                    : ((age === '18+' || age === 'teacher') && !matches('(pointer: coarse)') ? 'compact' : 'comfortable');
+                root.setAttribute('data-density', density);
+
+                if (lite) return;
+                var FONTS = {
+                    '13-15': 'family=Archivo:wdth,wght@75..125,500..800&family=Atkinson+Hyperlegible+Next:wght@400;500;600',
+                    '16-18': 'family=Archivo:wdth,wght@75..125,500..800&family=Atkinson+Hyperlegible+Next:wght@400;500;600',
+                    '18+': 'family=Atkinson+Hyperlegible+Next:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,600',
+                    teacher: 'family=Archivo:wdth,wght@75..125,500..800&family=IBM+Plex+Sans:wght@400;500;600'
+                };
                 try {
                     var preconnect = doc.createElement('link');
                     preconnect.rel = 'preconnect';
@@ -49,9 +81,9 @@
                     preconnect.crossOrigin = 'anonymous';
                     doc.head.appendChild(preconnect);
                     var font = doc.createElement('link');
-                    font.id = 'inter-font';
+                    font.id = 'font-' + age;
                     font.rel = 'stylesheet';
-                    font.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap';
+                    font.href = 'https://fonts.googleapis.com/css2?' + FONTS[age] + '&display=swap';
                     doc.head.appendChild(font);
                 } catch (e) {}
             })();
@@ -60,15 +92,5 @@
     <body>
         <noscript>You need to enable JavaScript to run this app.</noscript>
         <div id="root"></div>
-        <!--
-      This HTML file is a template.
-      If you open it directly in the browser, you will see an empty page.
-
-      You can add webfonts, meta tags, or analytics to this file.
-      The build step will place the bundled scripts into the <body> tag.
-
-      To begin the development, run `npm start` or `yarn start`.
-      To create a production bundle, use `npm run build` or `yarn build`.
-    -->
     </body>
 </html>

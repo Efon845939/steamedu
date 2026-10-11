@@ -2,196 +2,443 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
+/* ------------------------------------------------------------------
+   STEAM Hub themes. Colours: src/theme/tokens.css (generated). This file
+   sets everything else per age theme: type, radius, motion, shadows.
+   html attributes (set before first paint by public/index.html, then kept
+   in sync by src/lib/theme.js):
+     data-age      13-15 | 16-18 | 18+ | teacher   fixed by the account
+     class dark    dark mode
+     data-text     s | m | l                      text size
+     data-motion   full | reduced | off
+     data-density  comfortable | compact
+     class lite    low-bandwidth mode
+   See frontend/DESIGN.md before adding new tokens.
+   ------------------------------------------------------------------ */
+
+@layer base {
+  /* 16-18 "Engineering pad" is also the logged-out brand theme. */
+  :root {
+    --tx: 1;
+    --density-k: 1;
+    --font-fallback: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --font-body: 'Atkinson Hyperlegible Next', var(--font-fallback);
+    --font-display: 'Archivo', var(--font-fallback);
+    --font-num: 'Archivo', var(--font-fallback);
+    --display-stretch: 112%;
+    --display-weight: 700;
+    --h1-weight: 700;
+    --num-stretch: 100%;
+    --num-weight: 600;
+    --lh-body: 1.55;
+    --lh-display: 1.12;
+    --fs-xs: max(13px, calc(13.33px * var(--tx)));
+    --fs-sm: calc(14.5px * var(--tx));
+    --fs-base: calc(16px * var(--tx));
+    --fs-lg: calc(17.5px * var(--tx));
+    --fs-xl: calc(19.2px * var(--tx));
+    --fs-2xl: calc(23px * var(--tx));
+    --fs-3xl: calc(27.6px * var(--tx));
+    --fs-4xl: calc(33.2px * var(--tx));
+    --fs-5xl: calc(39.8px * var(--tx));
+    --r-sm: 6px;
+    --r-md: 8px;
+    --r-lg: 10px;
+    --trace: 2px;
+    --wave: 1.5px;
+    --icon-stroke: 1.75;
+    --dur-press: 80ms;
+    --dur-enter: 180ms;
+    --dur-exit: 120ms;
+    --dur-moment: 500ms;
+    --ease-enter: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+    --ease-spring: cubic-bezier(0.3, 1.3, 0.55, 1);
+    --travel: 8px;
+    --shadow-raised: 0 1px 2px rgb(17 24 32 / 0.05), 0 6px 16px rgb(17 24 32 / 0.06);
+    --shadow-float: 0 2px 4px rgb(17 24 32 / 0.06), 0 12px 32px rgb(17 24 32 / 0.12);
+    --on-danger: 255 255 255;
+    --grid-minor: rgb(var(--rule) / 0.38);
+    --grid-major: rgb(var(--rule) / 0.85);
+    color-scheme: light;
+  }
+
+  /* 13-15 "Field notebook": big expanded headings, snappy spring. */
+  :root[data-age="13-15"] {
+    --display-stretch: 125%;
+    --display-weight: 700;
+    --h1-weight: 800;
+    --num-weight: 700;
+    --lh-display: 1.08;
+    --fs-xs: max(14px, calc(14px * var(--tx)));
+    --fs-sm: max(14px, calc(15px * var(--tx)));
+    --fs-base: calc(17px * var(--tx));
+    --fs-lg: calc(19px * var(--tx));
+    --fs-xl: calc(21.25px * var(--tx));
+    --fs-2xl: calc(26.56px * var(--tx));
+    --fs-3xl: calc(33.2px * var(--tx));
+    --fs-4xl: calc(41.5px * var(--tx));
+    --fs-5xl: calc(41.5px * var(--tx));
+    --r-sm: 6px;
+    --r-md: 10px;
+    --r-lg: 14px;
+    --trace: 3px;
+    --wave: 2px;
+    --dur-enter: 220ms;
+    --dur-exit: 140ms;
+    --dur-moment: 420ms;
+    --ease-spring: cubic-bezier(0.3, 1.55, 0.55, 1);
+    --travel: 12px;
+    --shadow-raised: 0 1px 2px rgb(22 24 29 / 0.06), 0 4px 12px rgb(22 24 29 / 0.06);
+    --shadow-float: 0 2px 4px rgb(22 24 29 / 0.06), 0 12px 32px rgb(22 24 29 / 0.12);
+  }
+
+  /* 18+ "Journal and slate": serif headings, quiet and compact. */
+  :root[data-age="18+"] {
+    --font-display: 'Source Serif 4', Georgia, 'Times New Roman', serif;
+    --font-num: var(--font-body);
+    --display-stretch: 100%;
+    --display-weight: 600;
+    --h1-weight: 600;
+    --num-weight: 500;
+    --lh-body: 1.6;
+    --lh-display: 1.25;
+    --fs-xs: max(13px, calc(13px * var(--tx)));
+    --fs-sm: max(13px, calc(13.5px * var(--tx)));
+    --fs-base: calc(15px * var(--tx));
+    --fs-lg: calc(16.5px * var(--tx));
+    --fs-xl: calc(18px * var(--tx));
+    --fs-2xl: calc(21.6px * var(--tx));
+    --fs-3xl: calc(25.9px * var(--tx));
+    --fs-4xl: calc(31.1px * var(--tx));
+    --fs-5xl: calc(31.1px * var(--tx));
+    --r-sm: 4px;
+    --r-md: 6px;
+    --r-lg: 8px;
+    --trace: 1px;
+    --wave: 1px;
+    --icon-stroke: 1.5;
+    --dur-enter: 150ms;
+    --dur-exit: 100ms;
+    --dur-moment: 350ms;
+    --ease-spring: cubic-bezier(0.2, 0.9, 0.3, 1);
+    --travel: 4px;
+    --shadow-raised: none;
+    --shadow-float: 0 4px 16px rgb(25 29 28 / 0.08);
+  }
+
+  /* Teacher "Ledger": data first, nothing hero-sized. */
+  :root[data-age="teacher"] {
+    --font-body: 'IBM Plex Sans', var(--font-fallback);
+    --font-num: var(--font-body);
+    --display-stretch: 100%;
+    --display-weight: 600;
+    --h1-weight: 600;
+    --num-weight: 500;
+    --lh-body: 1.5;
+    --lh-display: 1.2;
+    --fs-xs: max(13px, calc(13px * var(--tx)));
+    --fs-sm: max(13px, calc(14px * var(--tx)));
+    --fs-base: calc(15px * var(--tx));
+    --fs-lg: calc(16.9px * var(--tx));
+    --fs-xl: calc(19px * var(--tx));
+    --fs-2xl: calc(21.4px * var(--tx));
+    --fs-3xl: calc(24px * var(--tx));
+    --fs-4xl: calc(24px * var(--tx));
+    --fs-5xl: calc(24px * var(--tx));
+    --r-sm: 4px;
+    --r-md: 6px;
+    --r-lg: 8px;
+    --trace: 1px;
+    --wave: 1px;
+    --icon-stroke: 1.5;
+    --dur-enter: 150ms;
+    --dur-exit: 100ms;
+    --dur-moment: 300ms;
+    --ease-spring: cubic-bezier(0.25, 1.08, 0.5, 1);
+    --travel: 0px;
+    --shadow-raised: 0 1px 2px rgb(19 25 32 / 0.05);
+    --shadow-float: -8px 0 24px rgb(19 25 32 / 0.08), 0 8px 24px rgb(19 25 32 / 0.08);
+  }
+
+  /* Phones: body text never below 16px. */
+  @media (max-width: 640px) {
+    :root[data-age="18+"],
+    :root[data-age="teacher"] {
+      --fs-base: max(16px, calc(15px * var(--tx)));
+    }
+    :root[data-age="13-15"] {
+      --fs-4xl: calc(33.2px * var(--tx));
+      --fs-5xl: calc(33.2px * var(--tx));
+    }
+    :root,
+    :root[data-age="16-18"] {
+      --fs-5xl: calc(33.2px * var(--tx));
+    }
+  }
+
+  /* Dark: no shadows, surfaces step up instead. */
+  :root.dark {
+    color-scheme: dark;
+    --shadow-raised: none;
+    --shadow-float: 0 12px 32px rgb(0 0 0 / 0.45);
+    --on-danger: var(--bg);
+    --grid-minor: rgb(var(--rule) / 0.55);
+    --grid-major: rgb(var(--rule) / 1);
+  }
+
+  :root[data-text="s"] { --tx: 0.9375; }
+  :root[data-text="l"] { --tx: 1.125; }
+
+  /* Compact shrinks spacing (rem), never text (text sizes are px-based above).
+     Touch screens keep full-size targets. */
+  :root[data-density="compact"] { --density-k: 0.875; }
+  @media (pointer: coarse) {
+    :root[data-density="compact"] { --density-k: 1; }
+  }
+
+  html {
+    font-size: calc(16px * var(--tx) * var(--density-k));
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  * {
+    border-color: rgb(var(--rule));
+  }
+
+  body {
     margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto",
-        "Oxygen", "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans",
-        "Helvetica Neue", sans-serif;
+    font-family: var(--font-body);
+    font-size: var(--fs-base);
+    line-height: var(--lh-body);
+    background-color: rgb(var(--bg));
+    color: rgb(var(--ink));
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-}
+    font-variant-numeric: normal;
+  }
 
-code {
-    font-family: source-code-pro, Menlo, Monaco, Consolas, "Courier New",
-        monospace;
-}
+  h1, h2, h3, h4 {
+    font-family: var(--font-display);
+    font-stretch: var(--display-stretch);
+    font-weight: var(--display-weight);
+    letter-spacing: -0.01em;
+    line-height: var(--lh-display);
+    text-wrap: balance;
+  }
+  h1 { font-weight: var(--h1-weight); }
 
+  p { text-wrap: pretty; }
 
+  :focus-visible {
+    outline: 2px solid rgb(var(--brand));
+    outline-offset: 2px;
+  }
 
-@layer base {
-  :root {
-        --background: 0 0% 100%;
-        --foreground: 0 0% 3.9%;
-        --card: 0 0% 100%;
-        --card-foreground: 0 0% 3.9%;
-        --popover: 0 0% 100%;
-        --popover-foreground: 0 0% 3.9%;
-        --primary: 0 0% 9%;
-        --primary-foreground: 0 0% 98%;
-        --secondary: 0 0% 96.1%;
-        --secondary-foreground: 0 0% 9%;
-        --muted: 0 0% 96.1%;
-        --muted-foreground: 0 0% 45.1%;
-        --accent: 0 0% 96.1%;
-        --accent-foreground: 0 0% 9%;
-        --destructive: 0 84.2% 60.2%;
-        --destructive-foreground: 0 0% 98%;
-        --border: 0 0% 89.8%;
-        --input: 0 0% 89.8%;
-        --ring: 0 0% 3.9%;
-        --chart-1: 12 76% 61%;
-        --chart-2: 173 58% 39%;
-        --chart-3: 197 37% 24%;
-        --chart-4: 43 74% 66%;
-        --chart-5: 27 87% 67%;
-        --radius: 0.5rem;
-    }
-  .dark {
-        --background: 0 0% 3.9%;
-        --foreground: 0 0% 98%;
-        --card: 0 0% 3.9%;
-        --card-foreground: 0 0% 98%;
-        --popover: 0 0% 3.9%;
-        --popover-foreground: 0 0% 98%;
-        --primary: 0 0% 98%;
-        --primary-foreground: 0 0% 9%;
-        --secondary: 0 0% 14.9%;
-        --secondary-foreground: 0 0% 98%;
-        --muted: 0 0% 14.9%;
-        --muted-foreground: 0 0% 63.9%;
-        --accent: 0 0% 14.9%;
-        --accent-foreground: 0 0% 98%;
-        --destructive: 0 62.8% 30.6%;
-        --destructive-foreground: 0 0% 98%;
-        --border: 0 0% 14.9%;
-        --input: 0 0% 14.9%;
-        --ring: 0 0% 83.1%;
-        --chart-1: 220 70% 50%;
-        --chart-2: 160 60% 45%;
-        --chart-3: 30 80% 55%;
-        --chart-4: 280 65% 60%;
-        --chart-5: 340 75% 55%;
-    }
-}
+  ::selection {
+    background-color: rgb(var(--brand-tint));
+    color: rgb(var(--ink));
+  }
 
+  /* lucide icons follow the theme's line weight. */
+  svg.lucide {
+    stroke-width: var(--icon-stroke);
+  }
 
-
-@layer base {
-  * {
-    @apply border-border;
-    }
-  body {
-    @apply bg-background text-foreground;
-    }
+  code, kbd {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
 }
 
 /* ------------------------------------------------------------------
-   Lite mode (html.lite, set by public/index.html + hooks/use-lite-mode)
-   Cuts motion, shadows, blur, gradients and the web font. Photos are
-   skipped in JS (CSS-hidden images would still download).
+   Type and the three lab marks. Use these instead of ad-hoc sizes.
+   ------------------------------------------------------------------ */
+@layer components {
+  .t-display { font-family: var(--font-display); font-stretch: var(--display-stretch); font-weight: var(--h1-weight); font-size: var(--fs-5xl); line-height: var(--lh-display); letter-spacing: -0.01em; }
+  .t-h1 { font-family: var(--font-display); font-stretch: var(--display-stretch); font-weight: var(--h1-weight); font-size: var(--fs-4xl); line-height: var(--lh-display); letter-spacing: -0.01em; }
+  .t-h2 { font-family: var(--font-display); font-stretch: var(--display-stretch); font-weight: var(--display-weight); font-size: var(--fs-3xl); line-height: var(--lh-display); letter-spacing: -0.01em; }
+  .t-h3 { font-family: var(--font-display); font-stretch: var(--display-stretch); font-weight: var(--display-weight); font-size: var(--fs-2xl); line-height: 1.2; letter-spacing: -0.005em; }
+  .t-lead { font-size: var(--fs-xl); line-height: 1.45; }
+  .t-body { font-size: var(--fs-base); line-height: var(--lh-body); }
+  .t-cap { font-size: var(--fs-xs); line-height: 1.45; color: rgb(var(--muted)); }
+  .t-num { font-family: var(--font-num); font-stretch: var(--num-stretch); font-weight: var(--num-weight); font-variant-numeric: tabular-nums; }
+  .tnum { font-variant-numeric: tabular-nums; }
+
+  /* The one raised element per screen (Next up strip, side panel). */
+  .surface-raised {
+    background-color: rgb(var(--surface));
+    border: 1px solid rgb(var(--rule));
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-raised);
+  }
+
+  /* Graph paper: only inside real work areas (diagram, worked solution, preview). Square corners. */
+  .graph-paper {
+    background-color: rgb(var(--surface));
+    background-image:
+      linear-gradient(var(--grid-major) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-major) 1px, transparent 1px),
+      linear-gradient(var(--grid-minor) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-minor) 1px, transparent 1px);
+    background-size: 40px 40px, 40px 40px, 8px 8px, 8px 8px;
+    border-radius: 0;
+  }
+
+  /* Specimen label: a misconception, filed. 4px corners in every theme. */
+  .specimen {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5em;
+    max-width: 100%;
+    padding: 2px 8px;
+    border: 1px solid rgb(var(--brand-ink));
+    border-radius: 4px;
+    background-color: rgb(var(--surface));
+    color: rgb(var(--ink));
+    font-size: var(--fs-xs);
+    font-weight: 600;
+    line-height: 1.45;
+  }
+  .specimen-code {
+    color: rgb(var(--brand-ink));
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Correction mark: the first wrong step. Wavy, so it never reads as a link. */
+  .wavy {
+    text-decoration-line: underline;
+    text-decoration-style: wavy;
+    text-decoration-color: rgb(var(--danger));
+    text-decoration-thickness: var(--wave);
+    text-underline-offset: 5px;
+    text-decoration-skip-ink: none;
+  }
+
+  /* Draw-in for the wavy mark: an overlay copy of the text, revealed left to right. */
+  .wavy-draw {
+    position: absolute;
+    inset: 0;
+    color: transparent;
+    pointer-events: none;
+    animation: wavy-wipe 260ms var(--ease-spring) both;
+  }
+
+  /* Trace draw-in: revealed left to right (a clip, so it works with non-scaling strokes). */
+  .trace-draw {
+    animation: wavy-wipe var(--dur-moment) var(--ease-enter) both;
+  }
+
+  @keyframes wavy-wipe {
+    from { clip-path: inset(0 100% 0 0); }
+    to { clip-path: inset(0 0 0 0); }
+  }
+}
+
+/* ------------------------------------------------------------------
+   Motion settings. Final states are always the no-animation state, so
+   turning motion down never hides content.
    ------------------------------------------------------------------ */
 
-/* Motion: .01ms rather than none so transitionend/animationend still fire
-   (drag-and-drop and Radix presence wait for them). Spinners keep spinning. */
+/* Reduced: opacity only, 120ms at most. */
+:root[data-motion="reduced"] {
+  --travel: 0px;
+}
+:root[data-motion="reduced"] .animate-in,
+:root[data-motion="reduced"] .animate-out {
+  --tw-enter-translate-x: 0 !important;
+  --tw-enter-translate-y: 0 !important;
+  --tw-enter-scale: 1 !important;
+  --tw-enter-rotate: 0 !important;
+  --tw-exit-translate-x: 0 !important;
+  --tw-exit-translate-y: 0 !important;
+  --tw-exit-scale: 1 !important;
+  --tw-exit-rotate: 0 !important;
+}
+:root[data-motion="reduced"] *,
+:root[data-motion="reduced"] *::before,
+:root[data-motion="reduced"] *::after {
+  scroll-behavior: auto !important;
+  transition-duration: 120ms !important;
+  animation-duration: 120ms !important;
+  animation-delay: 0s !important;
+}
+:root[data-motion="reduced"] .trace-draw,
+:root[data-motion="reduced"] .wavy-draw {
+  animation-name: fade !important;
+}
+
+/* Off (and lite): nothing moves. .01ms rather than none so transitionend and
+   animationend still fire (drag-and-drop and Radix presence wait for them). */
+:root[data-motion="off"],
 html.lite {
   scroll-behavior: auto !important;
 }
-
+:root[data-motion="off"] *:not(.spinner):not(.animate-spin),
+:root[data-motion="off"] *::before,
+:root[data-motion="off"] *::after,
 html.lite *:not(.spinner):not(.animate-spin),
 html.lite *::before,
 html.lite *::after {
   animation-duration: 0.01ms !important;
   animation-iteration-count: 1 !important;
+  animation-delay: 0s !important;
   transition-duration: 0.01ms !important;
   transition-delay: 0s !important;
   scroll-behavior: auto !important;
 }
 
+/* No JS-set preference yet: follow the device. */
 @media (prefers-reduced-motion: reduce) {
-  html {
-    scroll-behavior: auto !important;
-  }
-
-  *:not(.spinner):not(.animate-spin),
-  *::before,
-  *::after {
+  html:not([data-motion]) *:not(.spinner):not(.animate-spin),
+  html:not([data-motion]) *::before,
+  html:not([data-motion]) *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
-    transition-delay: 0s !important;
     scroll-behavior: auto !important;
   }
 }
 
-/* Shadows: zero only Tailwind's shadow layer so focus rings (ring-*) stay visible. */
+@keyframes fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ------------------------------------------------------------------
+   Lite mode: fewer bytes. No web fonts (index.html never requests them),
+   no shadows, no blur, no graph-paper image. Borders stay. Photos are
+   skipped in JS (CSS-hidden images would still download).
+   ------------------------------------------------------------------ */
+html.lite {
+  --font-body: var(--font-fallback);
+  --font-display: var(--font-fallback);
+  --font-num: var(--font-fallback);
+  --shadow-raised: none;
+  --shadow-float: none;
+}
+html.lite[data-age="18+"] {
+  --font-display: Georgia, 'Times New Roman', serif;
+}
 html.lite * {
   --tw-shadow: 0 0 #0000 !important;
   --tw-shadow-colored: 0 0 #0000 !important;
 }
-
-html.lite .card-hover:hover,
-html.lite .btn-hover-scale:hover {
-  transform: none !important;
-  box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000) !important;
+html.lite .graph-paper {
+  background-image: none;
 }
-
-/* Hover zoom / lift. */
-html.lite [class*="hover:scale-"]:hover,
-html.lite .group:hover [class*="group-hover:scale-"] {
-  --tw-scale-x: 1 !important;
-  --tw-scale-y: 1 !important;
-}
-
-html.lite [class*="hover:translate-y-"]:hover,
-html.lite [class*="hover:-translate-y-"]:hover,
-html.lite .group:hover [class*="group-hover:translate-y-"],
-html.lite .group:hover [class*="group-hover:-translate-y-"] {
-  --tw-translate-y: 0 !important;
-}
-
-html.lite [class*="hover:translate-x-"]:hover,
-html.lite [class*="hover:-translate-x-"]:hover,
-html.lite .group:hover [class*="group-hover:translate-x-"],
-html.lite .group:hover [class*="group-hover:-translate-x-"] {
-  --tw-translate-x: 0 !important;
-}
-
-/* Gradients: flatten to the first colour instead of removing them, so white
-   text on gradient buttons/circles/banners keeps its background. */
-html.lite [class*="bg-gradient-to-"] {
-  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-from) !important;
-}
-
-/* Full-page washes become plain white. */
-html.lite .min-h-screen[class*="bg-gradient-to-"] {
-  background-image: none !important;
-  background-color: #fff !important;
-}
-
-/* Gradient text (bg-clip-text + text-transparent) becomes solid text. */
-html.lite .lite-solid-text {
-  background: none !important;
-  color: #047857 !important;
-  -webkit-text-fill-color: currentColor;
-}
-
-/* Glass: no blur, opaque white panels. Skip anything that sets white text on
-   itself, so a translucent chip on a coloured banner can't turn white-on-white. */
 html.lite [class*="backdrop-blur"] {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }
-
-html.lite [class*="bg-white/"]:not([class*="text-white"]) {
-  background-color: #fff !important;
+html.lite [class*="bg-gradient-to-"] {
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-from) !important;
 }
-
 /* Purely decorative nodes (never information). */
 html.lite [data-decor] {
   display: none !important;
 }
 
-/* No web font: system UI stack (Inter is not downloaded in lite mode). */
-html.lite body {
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+/* Leftover bg-white in dark mode lands on the surface, not a white hole. */
+:root.dark .bg-white {
+  background-color: rgb(var(--surface));
 }

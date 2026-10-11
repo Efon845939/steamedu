@@ -1,48 +1,27 @@
-import React, { useContext, useState } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { BadgeCheck, LogOut, Menu, X } from 'lucide-react';
 import { AuthContext } from '../App';
 import { Button } from './ui/button';
-import { BadgeCheck, Feather } from 'lucide-react';
-import { toast } from 'sonner';
+import DisplaySettings, { DisplayPanel } from './DisplaySettings';
+import { Wordmark } from './lab';
 import { firstName } from '../lib/steam';
-import { useLiteMode } from '../hooks/use-lite-mode';
+import { useAgeTheme } from '../lib/theme';
+import { cn } from '../lib/utils';
+
+// Flat bar on the page colour with one hairline. Points sit here only for 13-15;
+// 16-18 shows them in the dashboard side column and 18+ only in the profile.
 
 const Navbar = () => {
   const { user, logout } = useContext(AuthContext);
   const location = useLocation();
   const navigate = useNavigate();
+  const theme = useAgeTheme();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const { lite, toggleLite } = useLiteMode();
 
-  const handleToggleLite = () => {
-    const next = !lite;
-    toggleLite();
-    if (next) {
-      toast.success('Lite mode on — images, animations and web fonts are off');
-    } else {
-      toast.info('Lite mode off');
-    }
-  };
-
-  // Rendered via a plain function (not a nested component) so the button keeps
-  // keyboard focus when lite mode re-renders the navbar.
-  const renderLiteToggle = (testId) => (
-    <button
-      type="button"
-      onClick={handleToggleLite}
-      aria-pressed={lite}
-      title="Lite mode: fewer bytes, no animations — for slow connections"
-      className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-sm font-medium transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-1 ${
-        lite
-          ? 'border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700'
-          : 'border-gray-300 bg-white text-gray-700 hover:border-emerald-400 hover:text-emerald-700'
-      }`}
-      data-testid={testId}
-    >
-      <Feather className="w-4 h-4" aria-hidden="true" />
-      <span>{lite ? 'Lite on' : 'Lite'}</span>
-    </button>
-  );
+  useEffect(() => {
+    setIsMenuOpen(false);
+  }, [location.pathname]);
 
   const handleLogout = () => {
     logout();
@@ -55,130 +34,129 @@ const Navbar = () => {
     return location.pathname === path || location.pathname.startsWith(path + '/');
   };
 
-  const NavLink = ({ to, children, onClick }) => (
-    <Link
-      to={to}
-      onClick={onClick}
-      className={`nav-link px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-200 ${
-        isActive(to)
-          ? 'bg-emerald-100 text-emerald-700'
-          : 'text-gray-700 hover:text-emerald-600 hover:bg-emerald-50'
-      }`}
-      data-testid={`nav-${to.replace('/', '') || 'home'}`}
-    >
-      {children}
-    </Link>
-  );
+  const items = [
+    { to: '/', label: 'Home' },
+    { to: '/content', label: 'Content' },
+    ...(user
+      ? [
+          { to: '/dashboard', label: 'Dashboard' },
+          { to: '/arena', label: 'Debug Arena' },
+          { to: '/ideas', label: 'Ideas' },
+          { to: '/contests', label: 'Contests' },
+        ]
+      : []),
+  ];
 
-  const links = (
-    <>
-      <NavLink to="/" onClick={() => setIsMenuOpen(false)}>Home</NavLink>
-      <NavLink to="/content" onClick={() => setIsMenuOpen(false)}>Content</NavLink>
-      {user && <NavLink to="/dashboard" onClick={() => setIsMenuOpen(false)}>Dashboard</NavLink>}
-      {user && <NavLink to="/arena" onClick={() => setIsMenuOpen(false)}>Debug Arena</NavLink>}
-      {user && <NavLink to="/ideas" onClick={() => setIsMenuOpen(false)}>Ideas</NavLink>}
-      {user && <NavLink to="/contests" onClick={() => setIsMenuOpen(false)}>Contests</NavLink>}
-    </>
-  );
+  const renderLink = (item, mobile = false) => {
+    const active = isActive(item.to);
+    return (
+      <Link
+        key={item.to}
+        to={item.to}
+        aria-current={active ? 'page' : undefined}
+        className={cn(
+          'inline-flex items-center whitespace-nowrap rounded-sm text-sm transition-colors',
+          mobile ? 'min-h-11 px-3' : 'h-11 px-3',
+          active
+            ? cn('font-semibold text-ink', mobile ? 'bg-brand-tint' : 'shadow-[inset_0_-2px_0_rgb(var(--brand))]')
+            : 'text-ink-muted hover:text-ink'
+        )}
+        data-testid={`nav-${item.to.replace('/', '') || 'home'}`}
+      >
+        {item.label}
+      </Link>
+    );
+  };
+
+  const showPoints = user && user.role === 'student' && theme === '13-15';
 
   return (
-    <nav className="bg-white/95 backdrop-blur-md shadow-lg border-b border-gray-200 sticky top-0 z-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center h-16">
-          <Link to="/" className="flex items-center space-x-2">
-            <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-lg">S</span>
-            </div>
-            <span className="font-bold text-xl text-gray-900">STEAM Hub</span>
+    <header className="sticky top-0 z-40 border-b border-rule bg-bg">
+      <nav aria-label="Main" className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
+        <div className="flex min-w-0 items-center gap-6">
+          <Link to="/" className="rounded-sm" aria-label="STEAM Hub home">
+            <Wordmark />
           </Link>
-
-          <div className="hidden md:flex items-center space-x-1">
-            {links}
-            <div className="pl-3">{renderLiteToggle('lite-mode-toggle')}</div>
-            {user ? (
-              <div className="flex items-center space-x-3 ml-6 pl-6 border-l border-gray-200">
-                <span className="text-sm text-gray-700 flex items-center gap-1" data-testid="navbar-user-name">
-                  Welcome, {firstName(user.full_name)}!
-                  {user.role === 'teacher' && user.verified && (
-                    <BadgeCheck className="w-4 h-4 text-sky-500" data-testid="navbar-verified-badge" />
-                  )}
-                  {user.role === 'teacher' && (
-                    <span className="text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-semibold">Teacher</span>
-                  )}
-                </span>
-                <Button
-                  onClick={handleLogout}
-                  variant="outline"
-                  size="sm"
-                  className="border-emerald-600 text-emerald-600 hover:bg-emerald-50"
-                  data-testid="logout-btn"
-                >
-                  Logout
-                </Button>
-              </div>
-            ) : (
-              <div className="flex items-center space-x-2 ml-6 pl-6 border-l border-gray-200">
-                <Link to="/auth">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="border-emerald-600 text-emerald-600 hover:bg-emerald-50"
-                    data-testid="login-nav-btn"
-                  >
-                    Login
-                  </Button>
-                </Link>
-              </div>
-            )}
-          </div>
-
-          <div className="md:hidden flex items-center gap-2">
-            {renderLiteToggle('lite-mode-toggle-mobile')}
-            <button
-              onClick={() => setIsMenuOpen(!isMenuOpen)}
-              className="text-gray-700 hover:text-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-500 p-2"
-              data-testid="mobile-menu-btn"
-            >
-              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                {isMenuOpen ? (
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                ) : (
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                )}
-              </svg>
-            </button>
-          </div>
+          <div className="hidden items-center gap-1 lg:flex">{items.map((i) => renderLink(i))}</div>
         </div>
 
-        {isMenuOpen && (
-          <div className="md:hidden py-4 border-t border-gray-200">
-            <div className="flex flex-col space-y-2">
-              {links}
+        <div className="hidden items-center gap-2 lg:flex">
+          {showPoints && (
+            <span className="inline-flex items-baseline gap-1.5 rounded-sm border border-rule-strong px-2.5 py-1 text-sm" data-testid="navbar-points">
+              <span className="t-num">{(user.points || 0).toLocaleString()}</span>
+              <span className="text-ink-muted">points</span>
+            </span>
+          )}
+          <DisplaySettings />
+          {user ? (
+            <div className="ml-2 flex items-center gap-3 border-l border-rule pl-4">
+              <span className="flex items-center gap-1.5 whitespace-nowrap text-sm" data-testid="navbar-user-name">
+                {firstName(user.full_name)}
+                {user.role === 'teacher' && user.verified && (
+                  <BadgeCheck className="h-4 w-4 text-info" aria-label="Verified teacher" data-testid="navbar-verified-badge" />
+                )}
+                {user.role === 'teacher' && <span className="rounded-sm bg-neutral-tint px-1.5 py-0.5 text-xs text-ink-muted">Teacher</span>}
+              </span>
+              <Button onClick={handleLogout} variant="ghost" size="sm" data-testid="logout-btn">
+                <LogOut aria-hidden="true" />
+                Log out
+              </Button>
+            </div>
+          ) : (
+            <Button asChild variant="outline" size="sm" className="ml-2">
+              <Link to="/auth" data-testid="login-nav-btn">
+                Sign in
+              </Link>
+            </Button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-1 lg:hidden">
+          {showPoints && (
+            <span className="inline-flex items-baseline gap-1 rounded-sm border border-rule-strong px-2 py-0.5 text-sm">
+              <span className="t-num">{(user.points || 0).toLocaleString()}</span>
+              <span className="sr-only">points</span>
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => setIsMenuOpen((open) => !open)}
+            aria-expanded={isMenuOpen}
+            aria-controls="mobile-menu"
+            aria-label={isMenuOpen ? 'Close menu' : 'Open menu'}
+            className="inline-grid h-11 w-11 place-items-center rounded-md text-ink hover:bg-neutral-tint"
+            data-testid="mobile-menu-btn"
+          >
+            {isMenuOpen ? <X className="h-6 w-6" aria-hidden="true" /> : <Menu className="h-6 w-6" aria-hidden="true" />}
+          </button>
+        </div>
+      </nav>
+
+      {isMenuOpen && (
+        <div id="mobile-menu" className="border-t border-rule bg-bg lg:hidden">
+          <div className="mx-auto flex max-w-7xl flex-col gap-1 px-4 py-3 sm:px-6">
+            {items.map((i) => renderLink(i, true))}
+            <div className="mt-3 border-t border-rule pt-4">
+              <DisplayPanel liteTestId="lite-mode-toggle-mobile" />
+            </div>
+            <div className="mt-3 border-t border-rule pt-4">
               {user ? (
-                <div className="pt-4 mt-4 border-t border-gray-200">
-                  <p className="text-sm text-gray-700 mb-3 px-3">Welcome, {user.full_name}!</p>
-                  <button
-                    onClick={handleLogout}
-                    className="w-full text-left px-3 py-2 text-sm font-medium text-emerald-600 hover:bg-emerald-50 rounded-lg"
-                    data-testid="logout-btn-mobile"
-                  >
-                    Logout
-                  </button>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm">{user.full_name}</span>
+                  <Button onClick={handleLogout} variant="outline" size="sm" data-testid="logout-btn-mobile">
+                    Log out
+                  </Button>
                 </div>
               ) : (
-                <div className="pt-4 mt-4 border-t border-gray-200">
-                  <Link to="/auth" onClick={() => setIsMenuOpen(false)} className="block w-full text-center">
-                    <Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white">
-                      Login / Register
-                    </Button>
-                  </Link>
-                </div>
+                <Button asChild className="w-full">
+                  <Link to="/auth">Sign in or create an account</Link>
+                </Button>
               )}
             </div>
           </div>
-        )}
-      </div>
-    </nav>
+        </div>
+      )}
+    </header>
   );
 };
 

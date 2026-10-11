@@ -1,4 +1,4 @@
-import React, { useState, useEffect, Suspense, lazy } from 'react';
+import React, { useState, useEffect, useCallback, useRef, Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import './App.css';
@@ -9,6 +9,8 @@ import NotFoundPage from './components/NotFoundPage';
 import Navbar from './components/Navbar';
 import { ChunkErrorBoundary, PageFallback } from './components/ChunkErrorBoundary';
 import { Toaster } from './components/ui/sonner';
+import { BrandMark } from './components/lab';
+import { DisplayProvider } from './lib/theme';
 
 // Everything past the landing and login pages loads on demand, so a slow connection
 // only downloads the code for the page the student actually opens.
@@ -29,10 +31,31 @@ const API = `${BACKEND_URL}/api`;
 
 export const AuthContext = React.createContext();
 
-// Reset the error boundary on navigation, so one failed page doesn't block the rest of the app
+// Reset the error boundary on navigation, so one failed page doesn't block the rest of the app.
+// Each page fades in with a CSS animation (opacity only, never blocking input, no wait for
+// JavaScript); reduced and off motion settings shorten or skip it.
 const RouteBoundary = ({ children }) => {
   const location = useLocation();
-  return <ChunkErrorBoundary key={location.pathname}>{children}</ChunkErrorBoundary>;
+  return (
+    <ChunkErrorBoundary key={location.pathname}>
+      <main id="main" tabIndex={-1} className="animate-fade outline-none">
+        {children}
+      </main>
+    </ChunkErrorBoundary>
+  );
+};
+
+// Points and streaks change as students play; refresh the signed-in user on navigation
+// (at most every 20 seconds) so the header never shows a stale total.
+const UserRefresher = ({ refreshUser, enabled }) => {
+  const location = useLocation();
+  const last = useRef(Date.now());
+  useEffect(() => {
+    if (!enabled || Date.now() - last.current < 20000) return;
+    last.current = Date.now();
+    refreshUser();
+  }, [location.pathname, enabled, refreshUser]);
+  return null;
 };
 
 function App() {
@@ -61,6 +84,20 @@ function App() {
     }
   };
 
+  // Quiet refresh: a failed request keeps the current user rather than logging out.
+  const refreshUser = useCallback(async () => {
+    try {
+      const response = await axios.get(`${API}/auth/me`);
+      setUser(response.data);
+    } catch (error) {
+      if (error?.response?.status === 401) {
+        localStorage.removeItem('token');
+        delete axios.defaults.headers.common['Authorization'];
+        setUser(null);
+      }
+    }
+  }, []);
+
   const login = (token, userData) => {
     localStorage.setItem('token', token);
     axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
@@ -75,19 +112,24 @@ function App() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-100 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading...</p>
+      <div className="flex min-h-screen items-center justify-center bg-bg" role="status" aria-live="polite">
+        <div className="flex flex-col items-center gap-3 text-brand-ink">
+          <BrandMark size={32} />
+          <p className="text-sm text-ink-muted">Loading</p>
         </div>
       </div>
     );
   }
 
   return (
-    <AuthContext.Provider value={{ user, setUser, login, logout, API }}>
-      <div className="App">
+    <AuthContext.Provider value={{ user, setUser, refreshUser, login, logout, API }}>
+      <DisplayProvider user={user}>
+      <div className="App min-h-screen bg-bg text-ink">
         <BrowserRouter>
+          <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-surface focus:px-4 focus:py-2 focus:text-ink focus:shadow-float">
+            Skip to content
+          </a>
+          <UserRefresher refreshUser={refreshUser} enabled={Boolean(user)} />
           <Navbar />
           <RouteBoundary>
             <Suspense fallback={<PageFallback />}>
@@ -113,8 +155,9 @@ function App() {
             </Suspense>
           </RouteBoundary>
         </BrowserRouter>
-        <Toaster position="top-center" richColors />
+        <Toaster position="top-center" />
       </div>
+      </DisplayProvider>
     </AuthContext.Provider>
   );
 }
