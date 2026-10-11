@@ -12,6 +12,22 @@ import { notifyNewBadges } from '../lib/badges';
 import { formatClock, optionLetter } from '../lib/arena';
 import { useCountdown } from '../hooks/useCountdown';
 import { useLiteMode } from '../hooks/use-lite-mode';
+import { useContentLang, LangToggle } from '../lib/lang';
+
+const UI_TEXT = {
+  en: {
+    problem: 'The problem', intro: 'Someone worked through this problem and one step of their reasoning is broken. Find it.',
+    whichStep: 'Which step is wrong?', why: 'Why is it wrong?', pickFirst: 'Pick the broken step first, then name the concept it breaks.',
+    bug: 'Bug here', diagnosis: 'Your diagnosis', exit: 'Exit', submitting: 'Submitting…', submitPartial: 'Submit what I have',
+    submit: 'Submit diagnosis', hint: 'Pick a step and an explanation to submit.',
+  },
+  tr: {
+    problem: 'Problem', intro: 'Biri bu problemi çözmüş ama akıl yürütmesinin bir adımı hatalı. O adımı bul.',
+    whichStep: 'Hangi adım yanlış?', why: 'Neden yanlış?', pickFirst: 'Önce hatalı adımı seç, sonra bozduğu kavramı söyle.',
+    bug: 'Hata burada', diagnosis: 'Senin teşhisin', exit: 'Çık', submitting: 'Gönderiliyor…', submitPartial: 'Olanı gönder',
+    submit: 'Teşhisi gönder', hint: 'Göndermek için bir adım ve bir açıklama seç.',
+  },
+};
 
 const LOW_TIME_SECONDS = 15;
 const DEFAULT_LIMIT_SECONDS = 90;
@@ -38,6 +54,13 @@ export const ArenaPlay = ({ challenge, onFinish, onExit }) => {
   const limit = challenge.time_limit_seconds || DEFAULT_LIMIT_SECONDS;
   const steps = challenge.steps || [];
   const explanations = challenge.explanations || [];
+  const [lang, setLang] = useContentLang();
+  // Official scenarios carry Turkish text; explanations are mapped by their English text, which is what we submit
+  const tr = challenge.tr || null;
+  const showTr = Boolean(tr) && lang === 'tr';
+  const t = UI_TEXT[showTr ? 'tr' : 'en'];
+  const stepText = (text, i) => (showTr && tr.steps?.[i]) || text;
+  const explanationText = (text) => (showTr && tr.explanations?.[text]) || text;
   const isCode = challenge.subject === 'Technology';
   const textFont = isCode ? 'font-mono text-sm' : '';
 
@@ -108,9 +131,10 @@ export const ArenaPlay = ({ challenge, onFinish, onExit }) => {
                   )}
                 </div>
                 <h1 className="text-base sm:text-xl font-bold text-gray-900 break-words" data-testid="arena-play-title">
-                  {challenge.title}
+                  {(showTr && tr.title) || challenge.title}
                 </h1>
               </div>
+              {tr && <LangToggle lang={lang} setLang={setLang} testIdPrefix="arena-lang" />}
               <Badge
                 className={`shrink-0 text-base px-3 py-1 gap-1 tabular-nums ${
                   lowTime
@@ -140,14 +164,12 @@ export const ArenaPlay = ({ challenge, onFinish, onExit }) => {
 
         <Card className="bg-white/80 backdrop-blur-sm mb-6" data-testid="arena-problem-card">
           <CardHeader className="pb-2">
-            <CardTitle className="text-lg text-gray-900">The problem</CardTitle>
-            <p className="text-sm text-gray-600">
-              Someone worked through this problem and one step of their reasoning is broken. Find it.
-            </p>
+            <CardTitle className="text-lg text-gray-900">{t.problem}</CardTitle>
+            <p className="text-sm text-gray-600">{t.intro}</p>
           </CardHeader>
           <CardContent>
             <p className={`whitespace-pre-wrap break-words text-gray-800 ${textFont}`} data-testid="arena-problem">
-              {challenge.problem}
+              {(showTr && tr.problem) || challenge.problem}
             </p>
           </CardContent>
         </Card>
@@ -156,7 +178,7 @@ export const ArenaPlay = ({ challenge, onFinish, onExit }) => {
           <CardHeader className="pb-2">
             <CardTitle className="text-lg text-gray-900 flex items-center gap-2" id="arena-step-heading">
               <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-rose-600 text-white text-sm" aria-hidden="true">1</span>
-              Which step is wrong?
+              {t.whichStep}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -188,10 +210,10 @@ export const ArenaPlay = ({ challenge, onFinish, onExit }) => {
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="sr-only">Step {i + 1}: </span>
-                        <span className={`whitespace-pre-wrap break-words ${textFont}`}>{text}</span>
+                        <span className={`whitespace-pre-wrap break-words ${textFont}`}>{stepText(text, i)}</span>
                         {selected && (
                           <span className="mt-1 flex items-center gap-1 text-xs font-semibold text-rose-700">
-                            <Bug className="w-3 h-3" aria-hidden="true" /> Bug here
+                            <Bug className="w-3 h-3" aria-hidden="true" /> {t.bug}
                           </span>
                         )}
                       </span>
@@ -220,10 +242,10 @@ export const ArenaPlay = ({ challenge, onFinish, onExit }) => {
               >
                 2
               </span>
-              Why is it wrong?
+              {t.why}
             </CardTitle>
             {step === null && (
-              <p className="text-sm text-gray-500">Pick the broken step first, then name the concept it breaks.</p>
+              <p className="text-sm text-gray-500">{t.pickFirst}</p>
             )}
           </CardHeader>
           <CardContent>
@@ -255,10 +277,10 @@ export const ArenaPlay = ({ challenge, onFinish, onExit }) => {
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="sr-only">Option {optionLetter(i)}: </span>
-                        <span className="whitespace-pre-wrap break-words">{text}</span>
+                        <span className="whitespace-pre-wrap break-words">{explanationText(text)}</span>
                         {selected && (
                           <span className="mt-1 flex items-center gap-1 text-xs font-semibold text-teal-700">
-                            <CheckCircle2 className="w-3 h-3" aria-hidden="true" /> Your diagnosis
+                            <CheckCircle2 className="w-3 h-3" aria-hidden="true" /> {t.diagnosis}
                           </span>
                         )}
                       </span>
@@ -278,7 +300,7 @@ export const ArenaPlay = ({ challenge, onFinish, onExit }) => {
             className={focusRing}
             data-testid="exit-arena-btn"
           >
-            <LogOut className="w-4 h-4" aria-hidden="true" /> Exit
+            <LogOut className="w-4 h-4" aria-hidden="true" /> {t.exit}
           </Button>
           <div className="flex flex-col sm:items-end gap-1">
             <Button
@@ -289,11 +311,11 @@ export const ArenaPlay = ({ challenge, onFinish, onExit }) => {
               data-testid="submit-arena-btn"
             >
               <Send className="w-4 h-4" aria-hidden="true" />
-              {submitting ? 'Submitting…' : expired && !ready ? 'Submit what I have' : 'Submit diagnosis'}
+              {submitting ? t.submitting : expired && !ready ? t.submitPartial : t.submit}
             </Button>
             {!ready && !expired && (
               <p id="arena-submit-hint" className="text-xs text-gray-500 text-center sm:text-right">
-                Pick a step and an explanation to submit.
+                {t.hint}
               </p>
             )}
           </div>

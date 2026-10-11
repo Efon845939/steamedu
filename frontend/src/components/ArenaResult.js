@@ -18,6 +18,14 @@ import {
 } from 'lucide-react';
 import { subjectEmoji, subjectBadgeColor, formatApiError } from '../lib/steam';
 import { scoreTier, stepLabel, ratePercent, FLAG_REASONS, FLAG_NOTE_MAX } from '../lib/arena';
+import { useContentLang, LangToggle } from '../lib/lang';
+
+const RESULT_TEXT = {
+  en: { diagnosis: 'Diagnosis', debugged: 'The reasoning, debugged', bug: 'The bug', pick: 'Your pick',
+    why: "Why it's wrong", youPicked: 'You picked:', trap: 'The trap:', debrief: 'Debrief' },
+  tr: { diagnosis: 'Teşhis', debugged: 'Akıl yürütme, hatası bulunmuş hâliyle', bug: 'Hata', pick: 'Senin seçimin',
+    why: 'Neden yanlış', youPicked: 'Senin seçtiğin:', trap: 'Tuzak:', debrief: 'Açıklama' },
+};
 
 const focusRing = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2';
 
@@ -158,6 +166,11 @@ export const ArenaResult = ({ challenge, result, onNext, onBack }) => {
     if (headingRef.current) headingRef.current.focus();
   }, []);
 
+  const [lang, setLang] = useContentLang();
+  const tr = challenge.tr || null;
+  const showTr = Boolean(tr) && lang === 'tr';
+  const rt = RESULT_TEXT[showTr ? 'tr' : 'en'];
+  const explanationText = (text) => (showTr && tr.explanations?.[text]) || text;
   const tier = scoreTier(result.score);
   const steps = challenge.steps || [];
   const flawed = result.flawed_step;
@@ -196,8 +209,13 @@ export const ArenaResult = ({ challenge, result, onNext, onBack }) => {
               className="text-2xl sm:text-3xl font-bold text-gray-900 break-words focus:outline-none"
               data-testid="arena-result-title"
             >
-              Diagnosis: {challenge.title}
+              {rt.diagnosis}: {(showTr && tr.title) || challenge.title}
             </h1>
+            {tr && (
+              <div className="flex justify-center pt-2">
+                <LangToggle lang={lang} setLang={setLang} testIdPrefix="arena-result-lang" />
+              </div>
+            )}
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="text-center space-y-3">
@@ -251,11 +269,11 @@ export const ArenaResult = ({ challenge, result, onNext, onBack }) => {
 
         <Card className="bg-white/80 backdrop-blur-sm" data-testid="arena-result-steps">
           <CardHeader className="pb-2">
-            <CardTitle className="text-lg text-gray-900">The reasoning, debugged</CardTitle>
+            <CardTitle className="text-lg text-gray-900">{rt.debugged}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <p className={`whitespace-pre-wrap break-words text-gray-700 bg-gray-50 rounded-lg p-3 ${textFont}`}>
-              {challenge.problem}
+              {(showTr && tr.problem) || challenge.problem}
             </p>
             <ol className="space-y-2">
               {steps.map((text, i) => {
@@ -282,12 +300,12 @@ export const ArenaResult = ({ challenge, result, onNext, onBack }) => {
                       </span>
                       <div className="min-w-0 flex-1">
                         <span className="sr-only">Step {i + 1}: </span>
-                        <span className={`whitespace-pre-wrap break-words text-gray-800 ${textFont}`}>{text}</span>
+                        <span className={`whitespace-pre-wrap break-words text-gray-800 ${textFont}`}>{(showTr && tr.steps?.[i]) || text}</span>
                         {(isBug || isPick) && (
                           <div className="mt-1 flex flex-wrap gap-2">
                             {isBug && (
                               <span className="inline-flex items-center gap-1 text-xs font-semibold text-rose-700" data-testid="arena-bug-label">
-                                <Bug className="w-3 h-3" aria-hidden="true" /> The bug
+                                <Bug className="w-3 h-3" aria-hidden="true" /> {rt.bug}
                               </span>
                             )}
                             {isPick && (
@@ -295,7 +313,7 @@ export const ArenaResult = ({ challenge, result, onNext, onBack }) => {
                                 className={`inline-flex items-center gap-1 text-xs font-semibold ${isBug ? 'text-emerald-700' : 'text-amber-700'}`}
                                 data-testid="arena-pick-label"
                               >
-                                <Target className="w-3 h-3" aria-hidden="true" /> Your pick
+                                <Target className="w-3 h-3" aria-hidden="true" /> {rt.pick}
                               </span>
                             )}
                           </div>
@@ -309,12 +327,12 @@ export const ArenaResult = ({ challenge, result, onNext, onBack }) => {
 
             <div className="rounded-lg border-2 border-emerald-300 bg-emerald-50 p-4" data-testid="arena-correct-explanation">
               <p className="flex items-center gap-2 text-sm font-semibold text-emerald-800 mb-1">
-                <CheckCircle2 className="w-4 h-4" aria-hidden="true" /> Why it's wrong
+                <CheckCircle2 className="w-4 h-4" aria-hidden="true" /> {rt.why}
               </p>
-              <p className="whitespace-pre-wrap break-words text-emerald-900">{result.correct_explanation}</p>
+              <p className="whitespace-pre-wrap break-words text-emerald-900">{explanationText(result.correct_explanation)}</p>
               {result.selected_explanation && !result.explanation_correct && (
                 <p className="mt-2 text-sm text-gray-700">
-                  <span className="font-semibold">You picked:</span> {result.selected_explanation}
+                  <span className="font-semibold">{rt.youPicked}</span> {explanationText(result.selected_explanation)}
                 </p>
               )}
             </div>
@@ -323,7 +341,7 @@ export const ArenaResult = ({ challenge, result, onNext, onBack }) => {
               <Alert role="note" className="border-rose-300 bg-rose-50 text-rose-900" data-testid="arena-misconception">
                 <AlertTriangle className="h-4 w-4 !text-rose-600" aria-hidden="true" />
                 <AlertDescription>
-                  <span className="font-semibold">The trap:</span> {result.misconception.description}
+                  <span className="font-semibold">{rt.trap}</span> {(showTr && result.misconception.description_tr) || result.misconception.description}
                 </AlertDescription>
               </Alert>
             )}
@@ -334,11 +352,11 @@ export const ArenaResult = ({ challenge, result, onNext, onBack }) => {
           <Card className="bg-amber-50 border-amber-200" data-testid="arena-debrief">
             <CardHeader className="pb-2">
               <CardTitle className="text-lg text-amber-900 flex items-center gap-2">
-                <Lightbulb className="w-5 h-5 text-amber-600" aria-hidden="true" /> Debrief
+                <Lightbulb className="w-5 h-5 text-amber-600" aria-hidden="true" /> {rt.debrief}
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="whitespace-pre-wrap break-words text-amber-950">{result.debrief}</p>
+              <p className="whitespace-pre-wrap break-words text-amber-950">{(showTr && result.debrief_tr) || result.debrief}</p>
             </CardContent>
           </Card>
         )}

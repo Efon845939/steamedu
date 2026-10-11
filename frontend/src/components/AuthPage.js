@@ -111,6 +111,9 @@ const AuthPage = () => {
                     <Input
                       id="login-username"
                       type="text"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
                       placeholder="Enter your username"
                       value={loginData.username}
                       onChange={(e) => setLoginData({ ...loginData, username: e.target.value })}
