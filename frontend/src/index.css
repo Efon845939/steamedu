@@ -463,7 +463,7 @@ html.lite [data-decor] {
   --ambient-a: 1;
   --amb-1: rgb(var(--c-brand-300) / 0.75);
   --amb-2: rgb(var(--c-info-300) / 0.7);
-  --amb-3: rgb(var(--c-danger-200) / 0.5);
+  --amb-3: rgb(var(--c-success-200) / 0.42);
   --amb-4: rgb(var(--c-warning-200) / 0.45);
 }
 :root.dark {
@@ -473,8 +473,8 @@ html.lite [data-decor] {
   --glass-shadow: 0 30px 70px -30px rgb(0 0 0 / 0.75), 0 12px 24px -16px rgb(0 0 0 / 0.5);
   --amb-1: rgb(var(--c-brand-500) / 0.42);
   --amb-2: rgb(var(--c-info-500) / 0.34);
-  --amb-3: rgb(var(--c-danger-500) / 0.2);
-  --amb-4: rgb(var(--c-warning-500) / 0.14);
+  --amb-3: rgb(var(--c-success-500) / 0.16);
+  --amb-4: rgb(var(--c-warning-500) / 0.12);
 }
 
 @layer components {
@@ -619,6 +619,13 @@ html.lite .glass::before,
 html.lite .glass::after,
 html.lite .ambient-blob {
   display: none;
+}
+
+/* Pages from before the redesign painted their own full-page wash; it gives way to the
+   ambient light field so every page sits on the same background. */
+#main [class*="min-h-screen"][class*="bg-gradient-to-"] {
+  background-image: none;
+  background-color: transparent;
 }
 
 /* Leftover bg-white in dark mode lands on the surface, not a white hole. */

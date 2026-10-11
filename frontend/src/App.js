@@ -9,6 +9,7 @@ import Navbar from './components/Navbar';
 import { ChunkErrorBoundary, PageFallback } from './components/ChunkErrorBoundary';
 import { Toaster } from './components/ui/sonner';
 import { BrandMark } from './components/lab';
+import Ambient from './components/Ambient';
 import { DisplayProvider } from './lib/theme';
 
 // Every page past login loads on demand, so a slow connection only downloads the code
@@ -44,6 +45,12 @@ const RouteBoundary = ({ children }) => {
       </main>
     </ChunkErrorBoundary>
   );
+};
+
+// The light field is strongest on the landing and sign-in pages and quieter inside the app.
+const RouteAmbient = () => {
+  const { pathname } = useLocation();
+  return <Ambient quiet={!(pathname === '/' || pathname === '/auth')} />;
 };
 
 // Points and streaks change as students play; refresh the signed-in user on navigation
@@ -125,11 +132,12 @@ function App() {
   return (
     <AuthContext.Provider value={{ user, setUser, refreshUser, login, logout, API }}>
       <DisplayProvider user={user}>
-      <div className="App min-h-screen bg-bg text-ink">
+      <div className="App min-h-screen text-ink">
         <BrowserRouter>
           <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-surface focus:px-4 focus:py-2 focus:text-ink focus:shadow-float">
             Skip to content
           </a>
+          <RouteAmbient />
           <UserRefresher refreshUser={refreshUser} enabled={Boolean(user)} />
           <Navbar />
           <RouteBoundary>

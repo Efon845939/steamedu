@@ -2,10 +2,11 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
+// Cards are liquid glass panels (index.css .glass) over the ambient light field.
 const Card = React.forwardRef(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn("rounded-xl border border-rule bg-card text-card-foreground", className)}
+    className={cn("glass glass-strong rounded-2xl text-card-foreground", className)}
     {...props} />
 ))
 Card.displayName = "Card"

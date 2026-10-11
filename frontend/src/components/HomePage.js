@@ -88,27 +88,6 @@ const finePointer = () => {
   }
 };
 
-// Ambient light field: three slow colour fields and faint graph paper. Decorative only.
-const BLOBS = [
-  { color: 'var(--amb-1)', pos: { left: '-12%', top: '-22%' }, anim: 'drift-a 26s' },
-  { color: 'var(--amb-2)', pos: { right: '-38%', top: '-4%' }, anim: 'drift-b 32s' },
-  { color: 'var(--amb-3)', pos: { left: '8%', top: '28%' }, anim: 'drift-c 38s' },
-  { color: 'var(--amb-4)', pos: { left: '-20%', top: '-10%' }, anim: 'drift-d 44s' },
-];
-
-const Ambient = () => (
-  <div className="ambient" aria-hidden="true" data-decor>
-    {BLOBS.map((b, i) => (
-      <div
-        key={i}
-        className="ambient-blob"
-        style={{ ...b.pos, background: `radial-gradient(circle, ${b.color}, transparent 62%)`, animation: `${b.anim} ease-in-out infinite` }}
-      />
-    ))}
-    <div className="ambient-grid" />
-  </div>
-);
-
 // Headline that resolves word by word, from blurred to sharp. The full sentence stays
 // the accessible name; the animated words are presentation.
 const RevealHeadline = ({ lines, className }) => {
@@ -588,7 +567,6 @@ const HomeContent = () => {
 
   return (
     <div className="relative">
-      <Ambient />
 
       <section className="mx-auto grid max-w-6xl items-center gap-12 px-4 pb-20 pt-14 sm:px-6 md:pt-24 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] lg:gap-14 lg:pb-28">
         <div className="flex flex-col gap-7">

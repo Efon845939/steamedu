@@ -1,14 +1,15 @@
 import React, { useState, useContext } from 'react';
 import { AuthContext } from '../App';
 import { Button } from './ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { formatApiError } from '../lib/steam';
-import { GraduationCap, School } from 'lucide-react';
+import { ArrowRight, CircleAlert, GraduationCap, School } from 'lucide-react';
+import { BrandMark, StatusWord } from './lab';
+import { cn } from '../lib/utils';
 
 const AuthPage = () => {
   const { login, API } = useContext(AuthContext);
@@ -62,7 +63,7 @@ const AuthPage = () => {
       return;
     }
     if (role === 'teacher' && !registerData.teacher_code.trim()) {
-      setError('Teachers need a signup code — ask your school administrator');
+      setError('Teachers need a signup code. Ask your school administrator for one.');
       return;
     }
     setIsLoading(true);
@@ -84,219 +85,218 @@ const AuthPage = () => {
     }
   };
 
+  const field = (id, label, props, hint) => (
+    <div className="flex flex-col gap-1.5">
+      <Label htmlFor={id} className="text-sm font-semibold">
+        {label}
+      </Label>
+      <Input id={id} className="h-12 rounded-xl border-rule-strong/60 bg-surface/70 text-base" {...props} />
+      {hint ? <p className="text-xs text-ink-muted">{hint}</p> : null}
+    </div>
+  );
+
+  const errorBox = error ? (
+    <div
+      role="alert"
+      className="flex items-start gap-2 rounded-xl border border-danger-rule bg-danger-tint/80 px-3.5 py-3 text-sm text-ink"
+      data-testid="auth-error"
+    >
+      <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-danger" aria-hidden="true" />
+      {error}
+    </div>
+  ) : null;
+
+  const roleButton = (value, Icon, label, note, testid) => (
+    <button
+      type="button"
+      onClick={() => setRole(value)}
+      aria-pressed={role === value}
+      className={cn(
+        'flex items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-[background-color,border-color,transform] duration-enter active:scale-[0.98]',
+        role === value ? 'border-brand-ink bg-brand-tint/80' : 'border-rule-strong/50 bg-surface/40 hover:bg-surface/70'
+      )}
+      data-testid={testid}
+    >
+      <Icon className={cn('h-5 w-5 shrink-0', role === value ? 'text-brand-ink' : 'text-ink-muted')} aria-hidden="true" />
+      <span className="flex flex-col">
+        <span className="text-sm font-semibold">{label}</span>
+        <span className="text-xs text-ink-muted">{note}</span>
+      </span>
+    </button>
+  );
+
+  const submitClass = 'glass-brand mt-1 inline-flex h-12 w-full items-center justify-center gap-2 rounded-full text-base font-semibold transition-transform duration-press active:scale-[0.98] disabled:opacity-60';
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Welcome to STEAM Hub</h1>
-          <p className="text-gray-600">Join the learning community</p>
+    <div className="mx-auto grid min-h-[calc(100vh-5rem)] max-w-6xl items-center gap-12 px-4 py-12 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,28rem)] lg:gap-20">
+      <div className="hidden flex-col gap-8 lg:flex">
+        <div className="animate-rise flex flex-col gap-5">
+          <span className="text-brand-ink">
+            <BrandMark size={34} />
+          </span>
+          <h1 className="font-display text-[clamp(2.4rem,4vw,3.6rem)] font-bold leading-[1.04] tracking-[-0.02em]">
+            Every wrong idea is worth catching.
+          </h1>
+          <p className="t-lead max-w-md text-ink-muted">
+            Sign in to pick up your diagnostic, your Debug Arena puzzles and your notebook of ideas, right where you left them.
+          </p>
+        </div>
+        <ol className="flex max-w-md flex-col gap-3">
+          {[
+            ['Diagnose', 'Eight questions with a confidence check.', 'unsure'],
+            ['Practise', 'Worked solutions with one broken step.', 'breaks'],
+            ['See it fixed', 'Your teacher sees which ideas still hold.', 'holds'],
+          ].map(([title, text, status], i) => (
+            <li
+              key={title}
+              className="glass animate-rise flex items-center justify-between gap-4 rounded-2xl px-5 py-4"
+              style={{ animationDelay: `${160 + i * 90}ms` }}
+            >
+              <span className="flex flex-col">
+                <span className="font-semibold">{title}</span>
+                <span className="text-sm text-ink-muted">{text}</span>
+              </span>
+              <StatusWord status={status} className="text-xs" />
+            </li>
+          ))}
+        </ol>
+      </div>
+
+      <div className="glass glass-strong animate-rise w-full rounded-[28px] p-6 sm:p-8" style={{ animationDelay: '80ms' }}>
+        <div className="mb-6 flex flex-col gap-1.5">
+          <h2 className="t-h2">Welcome to STEAM Hub</h2>
+          <p className="text-ink-muted">Sign in, or create an account in a minute.</p>
         </div>
 
-        <Card className="shadow-xl border-0 backdrop-blur-sm bg-white/90">
-          <CardHeader className="text-center">
-            <CardTitle className="text-2xl text-gray-900">Get Started</CardTitle>
-            <CardDescription>Login to your account or create a new one</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Tabs defaultValue="login" className="w-full">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="login" data-testid="login-tab">Login</TabsTrigger>
-                <TabsTrigger value="register" data-testid="register-tab">Register</TabsTrigger>
-              </TabsList>
+        <Tabs defaultValue="login" className="w-full" onValueChange={() => setError('')}>
+          <TabsList className="mb-6 grid h-12 w-full grid-cols-2 rounded-full border border-rule-strong/40 bg-surface/50 p-1">
+            <TabsTrigger value="login" className="h-full rounded-full text-sm font-semibold data-[state=active]:bg-surface data-[state=active]:shadow-raised" data-testid="login-tab">
+              Sign in
+            </TabsTrigger>
+            <TabsTrigger value="register" className="h-full rounded-full text-sm font-semibold data-[state=active]:bg-surface data-[state=active]:shadow-raised" data-testid="register-tab">
+              Create account
+            </TabsTrigger>
+          </TabsList>
 
-              <TabsContent value="login">
-                <form onSubmit={handleLogin} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="login-username">Username</Label>
-                    <Input
-                      id="login-username"
-                      type="text"
-                      placeholder="Enter your username"
-                      value={loginData.username}
-                      onChange={(e) => setLoginData({ ...loginData, username: e.target.value })}
-                      required
-                      data-testid="login-username-input"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="login-password">Password</Label>
-                    <Input
-                      id="login-password"
-                      type="password"
-                      placeholder="Enter your password"
-                      value={loginData.password}
-                      onChange={(e) => setLoginData({ ...loginData, password: e.target.value })}
-                      required
-                      data-testid="login-password-input"
-                    />
-                  </div>
-                  {error && (
-                    <div className="text-red-600 text-sm bg-red-50 p-3 rounded-lg" data-testid="auth-error">
-                      {error}
-                    </div>
-                  )}
-                  <Button
-                    type="submit"
-                    className="w-full bg-emerald-600 hover:bg-emerald-700"
-                    disabled={isLoading}
-                    data-testid="login-submit-btn"
-                  >
-                    {isLoading ? 'Logging in...' : 'Login'}
-                  </Button>
-                </form>
-              </TabsContent>
+          <TabsContent value="login" className="mt-0">
+            <form onSubmit={handleLogin} className="flex flex-col gap-4">
+              {field('login-username', 'Username', {
+                type: 'text',
+                autoComplete: 'username',
+                value: loginData.username,
+                onChange: (e) => setLoginData({ ...loginData, username: e.target.value }),
+                required: true,
+                'data-testid': 'login-username-input',
+              })}
+              {field('login-password', 'Password', {
+                type: 'password',
+                autoComplete: 'current-password',
+                value: loginData.password,
+                onChange: (e) => setLoginData({ ...loginData, password: e.target.value }),
+                required: true,
+                'data-testid': 'login-password-input',
+              })}
+              {errorBox}
+              <button type="submit" className={submitClass} disabled={isLoading} data-testid="login-submit-btn">
+                {isLoading ? 'Signing in' : 'Sign in'}
+                {!isLoading && <ArrowRight className="h-5 w-5" aria-hidden="true" />}
+              </button>
+            </form>
+          </TabsContent>
 
-              <TabsContent value="register">
-                <form onSubmit={handleRegister} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label>I am a...</Label>
-                    <div className="grid grid-cols-2 gap-3">
-                      <button
-                        type="button"
-                        onClick={() => setRole('student')}
-                        className={`flex flex-col items-center gap-1 p-3 rounded-xl border-2 transition-all ${
-                          role === 'student'
-                            ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
-                            : 'border-gray-200 text-gray-600 hover:border-emerald-200'
-                        }`}
-                        data-testid="role-student-btn"
-                      >
-                        <GraduationCap className="w-6 h-6" />
-                        <span className="font-semibold text-sm">Student</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setRole('teacher')}
-                        className={`flex flex-col items-center gap-1 p-3 rounded-xl border-2 transition-all ${
-                          role === 'teacher'
-                            ? 'border-amber-500 bg-amber-50 text-amber-700'
-                            : 'border-gray-200 text-gray-600 hover:border-amber-200'
-                        }`}
-                        data-testid="role-teacher-btn"
-                      >
-                        <School className="w-6 h-6" />
-                        <span className="font-semibold text-sm">Teacher</span>
-                      </button>
-                    </div>
-                  </div>
+          <TabsContent value="register" className="mt-0">
+            <form onSubmit={handleRegister} className="flex flex-col gap-4">
+              <fieldset className="flex flex-col gap-2">
+                <legend className="mb-2 text-sm font-semibold">I am a</legend>
+                <div className="grid grid-cols-2 gap-3">
+                  {roleButton('student', GraduationCap, 'Student', 'Ages 13 and up', 'role-student-btn')}
+                  {roleButton('teacher', School, 'Teacher', 'With a school code', 'role-teacher-btn')}
+                </div>
+              </fieldset>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="register-fullname">Full Name</Label>
-                    <Input
-                      id="register-fullname"
-                      type="text"
-                      placeholder="Enter your full name"
-                      value={registerData.full_name}
-                      onChange={(e) => setRegisterData({ ...registerData, full_name: e.target.value })}
-                      required
-                      data-testid="register-fullname-input"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="register-email">Email</Label>
-                    <Input
-                      id="register-email"
-                      type="email"
-                      placeholder="Enter your email"
-                      value={registerData.email}
-                      onChange={(e) => setRegisterData({ ...registerData, email: e.target.value })}
-                      required
-                      data-testid="register-email-input"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="register-username">Username</Label>
-                    <Input
-                      id="register-username"
-                      type="text"
-                      placeholder="Choose a username"
-                      value={registerData.username}
-                      onChange={(e) => setRegisterData({ ...registerData, username: e.target.value })}
-                      required
-                      data-testid="register-username-input"
-                    />
-                  </div>
+              {field('register-fullname', 'Full name', {
+                type: 'text',
+                autoComplete: 'name',
+                value: registerData.full_name,
+                onChange: (e) => setRegisterData({ ...registerData, full_name: e.target.value }),
+                required: true,
+                'data-testid': 'register-fullname-input',
+              })}
+              {field('register-email', 'Email', {
+                type: 'email',
+                autoComplete: 'email',
+                value: registerData.email,
+                onChange: (e) => setRegisterData({ ...registerData, email: e.target.value }),
+                required: true,
+                'data-testid': 'register-email-input',
+              })}
+              {field('register-username', 'Username', {
+                type: 'text',
+                autoComplete: 'username',
+                value: registerData.username,
+                onChange: (e) => setRegisterData({ ...registerData, username: e.target.value }),
+                required: true,
+                'data-testid': 'register-username-input',
+              })}
 
-                  {role === 'student' ? (
-                    <div className="space-y-2">
-                      <Label htmlFor="register-age">Age</Label>
-                      <Input
-                        id="register-age"
-                        type="number"
-                        min="10"
-                        max="100"
-                        placeholder="Your age (content is matched to your age group)"
-                        value={registerData.age}
-                        onChange={(e) => setRegisterData({ ...registerData, age: e.target.value })}
-                        required
-                        data-testid="register-age-input"
-                      />
-                      <p className="text-xs text-gray-500">
-                        Quizzes, activities and articles are tailored to age groups 13-15, 16-18 and 18+.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <Label htmlFor="register-teacher-code">Teacher Signup Code</Label>
-                      <Input
-                        id="register-teacher-code"
-                        type="text"
-                        placeholder="Enter your teacher access code"
-                        value={registerData.teacher_code}
-                        onChange={(e) => setRegisterData({ ...registerData, teacher_code: e.target.value })}
-                        required
-                        data-testid="register-teacher-code-input"
-                      />
-                      <p className="text-xs text-gray-500">
-                        Only verified educators receive this code. Students cannot sign up as teachers.
-                      </p>
-                    </div>
+              {role === 'student'
+                ? field(
+                    'register-age',
+                    'Age',
+                    {
+                      type: 'number',
+                      min: '10',
+                      max: '100',
+                      inputMode: 'numeric',
+                      value: registerData.age,
+                      onChange: (e) => setRegisterData({ ...registerData, age: e.target.value }),
+                      required: true,
+                      'data-testid': 'register-age-input',
+                    },
+                    'Quizzes, activities and articles are matched to age groups 13-15, 16-18 and 18+.'
+                  )
+                : field(
+                    'register-teacher-code',
+                    'Teacher signup code',
+                    {
+                      type: 'text',
+                      value: registerData.teacher_code,
+                      onChange: (e) => setRegisterData({ ...registerData, teacher_code: e.target.value }),
+                      required: true,
+                      'data-testid': 'register-teacher-code-input',
+                    },
+                    'Only verified educators receive this code. Students cannot sign up as teachers.'
                   )}
 
-                  <div className="space-y-2">
-                    <Label htmlFor="register-password">Password</Label>
-                    <Input
-                      id="register-password"
-                      type="password"
-                      placeholder="Create a password (min 6 characters)"
-                      value={registerData.password}
-                      onChange={(e) => setRegisterData({ ...registerData, password: e.target.value })}
-                      required
-                      data-testid="register-password-input"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="register-confirm-password">Confirm Password</Label>
-                    <Input
-                      id="register-confirm-password"
-                      type="password"
-                      placeholder="Confirm your password"
-                      value={registerData.confirmPassword}
-                      onChange={(e) => setRegisterData({ ...registerData, confirmPassword: e.target.value })}
-                      required
-                      data-testid="register-confirm-password-input"
-                    />
-                  </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                {field('register-password', 'Password', {
+                  type: 'password',
+                  autoComplete: 'new-password',
+                  placeholder: 'At least 6 characters',
+                  value: registerData.password,
+                  onChange: (e) => setRegisterData({ ...registerData, password: e.target.value }),
+                  required: true,
+                  'data-testid': 'register-password-input',
+                })}
+                {field('register-confirm-password', 'Confirm password', {
+                  type: 'password',
+                  autoComplete: 'new-password',
+                  value: registerData.confirmPassword,
+                  onChange: (e) => setRegisterData({ ...registerData, confirmPassword: e.target.value }),
+                  required: true,
+                  'data-testid': 'register-confirm-password-input',
+                })}
+              </div>
 
-                  {error && (
-                    <div className="text-red-600 text-sm bg-red-50 p-3 rounded-lg" data-testid="auth-error">
-                      {error}
-                    </div>
-                  )}
+              {errorBox}
 
-                  <Button
-                    type="submit"
-                    className="w-full bg-emerald-600 hover:bg-emerald-700"
-                    disabled={isLoading}
-                    data-testid="register-submit-btn"
-                  >
-                    {isLoading ? 'Creating account...' : `Create ${role === 'teacher' ? 'Teacher' : 'Student'} Account`}
-                  </Button>
-                </form>
-              </TabsContent>
-            </Tabs>
-          </CardContent>
-        </Card>
+              <button type="submit" className={submitClass} disabled={isLoading} data-testid="register-submit-btn">
+                {isLoading ? 'Creating your account' : `Create ${role === 'teacher' ? 'teacher' : 'student'} account`}
+                {!isLoading && <ArrowRight className="h-5 w-5" aria-hidden="true" />}
+              </button>
+            </form>
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );
