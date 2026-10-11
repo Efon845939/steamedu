@@ -16,10 +16,10 @@ const ordinal = (n) => {
 const formatNumber = (value, digits = 0) =>
   Number(value || 0).toLocaleString('en-US', { maximumFractionDigits: digits });
 
-const TAB_LIST = 'h-auto w-full justify-start gap-6 rounded-none border-b border-rule bg-transparent p-0 text-ink-muted';
+const TAB_LIST = 'glass inline-flex h-auto w-auto max-w-full justify-start gap-1 overflow-x-auto rounded-full p-1 text-ink-muted';
 const TAB_TRIGGER = cn(
-  '-mb-px h-11 rounded-none border-b-2 border-transparent px-0 py-0 text-base font-semibold text-ink-muted shadow-none',
-  'hover:text-ink data-[state=active]:border-brand-ink data-[state=active]:bg-transparent data-[state=active]:text-ink data-[state=active]:shadow-none'
+  'h-10 shrink-0 rounded-full px-4 text-sm font-semibold text-ink-muted transition-colors',
+  'hover:text-ink data-[state=active]:bg-surface data-[state=active]:text-ink data-[state=active]:shadow-raised'
 );
 
 const TH = 'py-2 pr-4 text-left align-bottom text-sm font-semibold text-ink-muted';
@@ -118,7 +118,7 @@ const LeaderboardPage = () => {
             </p>
           </div>
 
-          <div className="mt-6 overflow-x-auto" data-testid="students-leaderboard-card">
+          <div className="glass glass-strong mt-6 overflow-x-auto rounded-[24px] px-5 py-2" data-testid="students-leaderboard-card">
             {loading ? (
               <p className="border-y border-rule py-8 text-ink-muted" role="status">Loading the board</p>
             ) : students.length === 0 ? (
@@ -183,7 +183,7 @@ const LeaderboardPage = () => {
               {teachers.best.length === 0 ? (
                 <p className="mt-4 border-y border-rule py-6 text-ink-muted">No teachers yet.</p>
               ) : (
-                <div className="mt-4 overflow-x-auto">
+                <div className="glass glass-strong mt-4 overflow-x-auto rounded-[24px] px-5 py-2">
                   <table className="w-full border-collapse tnum">
                     <caption className="sr-only">Best teachers</caption>
                     <thead>
@@ -227,7 +227,7 @@ const LeaderboardPage = () => {
               {teachers.popular.length === 0 ? (
                 <p className="mt-4 border-y border-rule py-6 text-ink-muted">No teachers yet.</p>
               ) : (
-                <div className="mt-4 overflow-x-auto">
+                <div className="glass glass-strong mt-4 overflow-x-auto rounded-[24px] px-5 py-2">
                   <table className="w-full border-collapse tnum">
                     <caption className="sr-only">Most popular teachers</caption>
                     <thead>

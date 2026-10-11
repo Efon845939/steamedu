@@ -185,8 +185,8 @@ export const ArenaPlay = ({ challenge, onFinish, onExit, position }) => {
 
   return (
     <div className={cn('mx-auto w-full px-4 pb-16 sm:px-6', journal ? 'max-w-5xl' : 'max-w-3xl')} data-testid="arena-play">
-      <div className="sticky top-16 z-30 -mx-4 bg-bg px-4 sm:mx-0 sm:px-0" data-testid="arena-play-header">
-        <div className="relative flex min-h-14 flex-wrap items-center justify-between gap-x-5 gap-y-1 border-b border-rule py-2">
+      <div className="sticky top-[5.25rem] z-30 mt-4" data-testid="arena-play-header">
+        <div className="glass relative flex min-h-14 flex-wrap items-center justify-between gap-x-5 gap-y-1 overflow-hidden rounded-full px-5 py-2">
           <ArenaCounter position={position} journal={journal} />
           <div className="flex items-center gap-5">
             {notebook && streak > 0 && (
@@ -225,7 +225,7 @@ export const ArenaPlay = ({ challenge, onFinish, onExit, position }) => {
         </p>
       </div>
 
-      <div className={cn('mt-6 sm:mt-8', journal && 'max-w-[68ch]')}>
+      <div className={cn('glass glass-strong animate-question mt-6 rounded-[28px] p-6 sm:mt-8 sm:p-8', journal && 'max-w-[68ch]')}>
         <p className="flex flex-wrap gap-x-4 text-sm text-ink-muted">
           <span className="font-semibold">{challenge.subject}</span>
           <span>{sourceLabel(challenge)}</span>
@@ -285,10 +285,10 @@ export const ArenaPlay = ({ challenge, onFinish, onExit, position }) => {
                 aria-pressed={selected}
                 disabled={submitting || finished}
                 className={cn(
-                  'min-h-12 w-full rounded-md border bg-surface px-4 py-3 text-left transition-colors disabled:cursor-not-allowed',
+                  'min-h-12 w-full rounded-2xl border px-4 py-3 text-left transition-[border-color,background-color,transform,box-shadow] duration-enter ease-spring active:scale-[0.99] disabled:cursor-not-allowed',
                   selected
-                    ? 'border-brand-ink bg-brand-tint ring-1 ring-inset ring-brand-ink'
-                    : 'border-rule-strong hover:border-ink'
+                    ? 'scale-[1.01] border-brand-ink bg-brand-tint/90 shadow-[0_10px_30px_-14px_rgb(var(--brand)/0.7)] ring-1 ring-inset ring-brand-ink'
+                    : 'border-rule-strong/50 bg-surface/55 backdrop-blur-md hover:-translate-y-0.5 hover:bg-surface/80'
                 )}
                 data-testid={`arena-explanation-${i}`}
               >
@@ -302,7 +302,7 @@ export const ArenaPlay = ({ challenge, onFinish, onExit, position }) => {
 
       <div
         className={cn(
-          'mt-8 flex flex-col gap-3 border-t border-rule pt-4 sm:flex-row sm:items-center sm:justify-between',
+          'glass sticky bottom-3 z-20 mt-8 flex flex-col gap-3 rounded-[22px] px-4 py-3 sm:flex-row sm:items-center sm:justify-between',
           journal && 'max-w-[760px]'
         )}
       >

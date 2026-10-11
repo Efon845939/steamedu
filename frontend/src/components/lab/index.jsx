@@ -128,7 +128,7 @@ export const CorrectionMark = ({ children, draw = false, className }) => {
 // Graph paper: only inside real work areas (a question diagram, a worked solution,
 // a scenario preview). Square corners, because paper has corners.
 export const GraphPaper = ({ as: Comp = 'div', className, ...rest }) => (
-  <Comp className={cn('graph-paper border border-rule', className)} {...rest} />
+  <Comp className={cn('graph-paper overflow-hidden rounded-2xl border border-rule/70 backdrop-blur-md', className)} {...rest} />
 );
 
 // Pointer sheen for .glass elements: the highlight follows the cursor.

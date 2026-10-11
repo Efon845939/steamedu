@@ -274,14 +274,13 @@
 
   /* Graph paper: only inside real work areas (diagram, worked solution, preview). Square corners. */
   .graph-paper {
-    background-color: rgb(var(--surface));
+    background-color: rgb(var(--surface) / 0.82);
     background-image:
       linear-gradient(var(--grid-major) 1px, transparent 1px),
       linear-gradient(90deg, var(--grid-major) 1px, transparent 1px),
       linear-gradient(var(--grid-minor) 1px, transparent 1px),
       linear-gradient(90deg, var(--grid-minor) 1px, transparent 1px);
     background-size: 40px 40px, 40px 40px, 8px 8px, 8px 8px;
-    border-radius: 0;
   }
 
   /* Specimen label: a misconception, filed. 4px corners in every theme. */

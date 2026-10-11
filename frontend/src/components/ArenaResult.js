@@ -251,7 +251,7 @@ const ArenaResultSheet = ({ challenge, result, onNext, onBack, position }) => {
 
   return (
     <div className={cn('mx-auto w-full px-4 pb-16 pt-6 sm:px-6 sm:pt-8', journal ? 'max-w-5xl' : 'max-w-3xl')} data-testid="arena-result">
-      <div className={cn(journal && 'max-w-[760px]')}>
+      <div className={cn('glass glass-tint-brand animate-question rounded-[28px] p-6 sm:p-8', journal && 'max-w-[760px]')}>
         <ArenaCounter position={position} journal={journal} />
         <p className="mt-3 flex flex-wrap gap-x-4 text-sm text-ink-muted">
           <span className="font-semibold">{challenge.subject}</span>
@@ -272,7 +272,7 @@ const ArenaResultSheet = ({ challenge, result, onNext, onBack, position }) => {
           <p className="text-lg font-semibold" data-testid="arena-score-tier">{tier.label}</p>
         </div>
 
-        <ul className="mt-4 divide-y divide-rule border-y border-rule" aria-label="How you did">
+        <ul className="mt-4 divide-y divide-rule/60 border-y border-rule/60" aria-label="How you did">
           <CheckRow
             ok={result.step_correct}
             okText={`You found the broken step (${stepLabel(flawed)}).`}
@@ -316,7 +316,7 @@ const ArenaResultSheet = ({ challenge, result, onNext, onBack, position }) => {
         )}
       </div>
 
-      <section className="mt-10" data-testid="arena-result-steps" aria-labelledby="arena-checked-heading">
+      <section className="glass glass-strong mt-6 rounded-[28px] p-6 sm:p-8" data-testid="arena-result-steps" aria-labelledby="arena-checked-heading">
         <h2 id="arena-checked-heading" className="font-sans text-base font-semibold">The reasoning, checked</h2>
         <p className={cn('mt-2 whitespace-pre-wrap break-words text-ink-muted', journal && 'max-w-[68ch]', textFont)}>
           {challenge.problem}
@@ -379,7 +379,7 @@ const ArenaResultSheet = ({ challenge, result, onNext, onBack, position }) => {
       </section>
 
       {result.debrief && (
-        <section className={cn('mt-8', journal && 'max-w-[68ch]')} data-testid="arena-debrief" aria-labelledby="arena-debrief-heading">
+        <section className={cn('glass glass-strong mt-6 rounded-[28px] p-6 sm:p-8', journal && 'max-w-[68ch]')} data-testid="arena-debrief" aria-labelledby="arena-debrief-heading">
           <h2 id="arena-debrief-heading" className="font-sans text-base font-semibold">Debrief</h2>
           <p className="mt-2 whitespace-pre-wrap break-words">{result.debrief}</p>
         </section>

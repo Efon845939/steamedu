@@ -42,7 +42,7 @@ const ChallengeRow = ({ challenge: c, user, onStart }) => {
   const best = c.attempted ? bestStatus(c.best_score) : null;
   return (
     <li
-      className="grid gap-x-6 gap-y-3 border-b border-rule py-5 sm:grid-cols-[7.5rem_minmax(0,1fr)_auto]"
+      className="grid gap-x-6 gap-y-3 border-b border-rule/60 py-5 last:border-b-0 sm:grid-cols-[7.5rem_minmax(0,1fr)_auto]"
       data-testid={`arena-card-${c.id}`}
     >
       <p className="text-sm font-semibold text-ink-muted sm:pt-0.5">{c.subject}</p>
@@ -321,7 +321,7 @@ const ArenaPage = () => {
           {upNext && (
             <section
               aria-labelledby="arena-up-next"
-              className="surface-raised mb-10 flex flex-wrap items-center justify-between gap-x-6 gap-y-4 px-5 py-5 sm:px-6"
+              className="glass glass-tint-brand animate-question mb-10 flex flex-wrap items-center justify-between gap-x-6 gap-y-4 rounded-[26px] px-6 py-6 sm:px-8"
             >
               <div className="min-w-0">
                 <p className="t-cap">Next up</p>
@@ -387,7 +387,7 @@ const ArenaPage = () => {
           </p>
           <div aria-busy={refreshing} className="mt-6">
             {challenges.length === 0 ? (
-              <div className="border-y border-rule py-10" data-testid="arena-empty">
+              <div className="glass glass-strong rounded-[24px] p-8" data-testid="arena-empty">
                 <h2 className="t-h3">No solutions here yet</h2>
                 <p className="mt-2 max-w-prose text-ink-muted">
                   {filtersActive
@@ -407,7 +407,7 @@ const ArenaPage = () => {
             ) : (
               <>
                 <h2 className="sr-only">Solutions</h2>
-                <ul className="border-t border-rule" data-testid="arena-challenge-list">
+                <ul className="glass glass-strong overflow-hidden rounded-[24px] px-5 sm:px-6" data-testid="arena-challenge-list">
                   {challenges.map((c) => (
                     <ChallengeRow key={c.id} challenge={c} user={user} onStart={startChallenge} />
                   ))}
