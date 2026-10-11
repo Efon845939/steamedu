@@ -354,13 +354,20 @@
   --tw-exit-scale: 1 !important;
   --tw-exit-rotate: 0 !important;
 }
-:root[data-motion="reduced"] *,
+:root[data-motion="reduced"] *:not(.spinner):not(.animate-spin),
 :root[data-motion="reduced"] *::before,
 :root[data-motion="reduced"] *::after {
   scroll-behavior: auto !important;
   transition-duration: 120ms !important;
   animation-duration: 120ms !important;
   animation-delay: 0s !important;
+  animation-iteration-count: 1 !important;
+}
+/* Ambient loops never run at a shortened duration: they stop. */
+:root[data-motion="reduced"] .ambient *,
+:root[data-motion="off"] .ambient *,
+html.lite .ambient * {
+  animation: none !important;
 }
 :root[data-motion="reduced"] .trace-draw,
 :root[data-motion="reduced"] .wavy-draw {
@@ -436,6 +443,182 @@ html.lite [class*="bg-gradient-to-"] {
 /* Purely decorative nodes (never information). */
 html.lite [data-decor] {
   display: none !important;
+}
+
+
+/* ------------------------------------------------------------------
+   Liquid glass. Translucent layers with a specular rim and a pointer
+   sheen, floating over the ambient light field. Use it for floating
+   layers only: the navigation bar, hero and feature panels, popovers.
+   Body text never sits directly on a moving background without glass
+   under it. Lite mode and browsers without backdrop-filter get a solid
+   surface instead.
+   ------------------------------------------------------------------ */
+:root {
+  --glass-a: 0.58;
+  --glass-a2: 0.3;
+  --glass-edge-a: 0.75;
+  --glass-blur: 22px;
+  --glass-shadow: 0 30px 60px -32px rgb(16 28 55 / 0.38), 0 12px 24px -16px rgb(16 28 55 / 0.2);
+  --ambient-a: 1;
+  --amb-1: rgb(var(--c-brand-300) / 0.75);
+  --amb-2: rgb(var(--c-info-300) / 0.7);
+  --amb-3: rgb(var(--c-danger-200) / 0.5);
+  --amb-4: rgb(var(--c-warning-200) / 0.45);
+}
+:root.dark {
+  --glass-a: 0.075;
+  --glass-a2: 0.02;
+  --glass-edge-a: 0.3;
+  --glass-shadow: 0 30px 70px -30px rgb(0 0 0 / 0.75), 0 12px 24px -16px rgb(0 0 0 / 0.5);
+  --amb-1: rgb(var(--c-brand-500) / 0.42);
+  --amb-2: rgb(var(--c-info-500) / 0.34);
+  --amb-3: rgb(var(--c-danger-500) / 0.2);
+  --amb-4: rgb(var(--c-warning-500) / 0.14);
+}
+
+@layer components {
+  .glass {
+    position: relative;
+    isolation: isolate;
+    background: linear-gradient(150deg, rgb(255 255 255 / var(--glass-a)), rgb(255 255 255 / var(--glass-a2)));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(175%);
+    backdrop-filter: blur(var(--glass-blur)) saturate(175%);
+    border: 1px solid rgb(255 255 255 / calc(var(--glass-edge-a) * 0.55));
+    box-shadow:
+      inset 0 1px 0 0 rgb(255 255 255 / var(--glass-edge-a)),
+      inset 0 -1px 0 0 rgb(255 255 255 / 0.06),
+      var(--glass-shadow);
+  }
+  /* Specular rim: brighter at the top-left and bottom-right corners, like light on a lens. */
+  .glass::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    z-index: -1;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(135deg, rgb(255 255 255 / 0.95), rgb(255 255 255 / 0) 32%, rgb(255 255 255 / 0) 62%, rgb(255 255 255 / 0.5));
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    opacity: calc(var(--glass-edge-a) + 0.15);
+    pointer-events: none;
+  }
+  /* Pointer sheen: set --mx and --my (percent) on the element; it rests near the top. */
+  .glass::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    background: radial-gradient(520px circle at var(--mx, 20%) var(--my, -10%), rgb(255 255 255 / 0.42), transparent 42%);
+    opacity: 0.55;
+    pointer-events: none;
+    transition: opacity 300ms var(--ease-enter);
+  }
+  .glass:hover::after { opacity: 0.9; }
+  :root.dark .glass::after {
+    background: radial-gradient(520px circle at var(--mx, 20%) var(--my, -10%), rgb(255 255 255 / 0.12), transparent 45%);
+  }
+  /* Dark glass: a smoked base so panels read as glass, not grey slabs. */
+  :root.dark .glass {
+    background:
+      linear-gradient(150deg, rgb(255 255 255 / var(--glass-a)), rgb(255 255 255 / var(--glass-a2))),
+      rgb(var(--bg) / 0.42);
+  }
+  .glass-strong { --glass-a: 0.72; --glass-a2: 0.48; }
+  /* Primary action in glass: the brand colour, lit from above. */
+  .glass-brand {
+    position: relative;
+    background: linear-gradient(165deg, rgb(var(--brand) / 0.97), rgb(var(--brand) / 0.84));
+    color: rgb(var(--on-brand));
+    border: 1px solid rgb(255 255 255 / 0.28);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.38),
+      inset 0 -1px 0 rgb(0 0 0 / 0.08),
+      0 16px 32px -14px rgb(var(--brand) / 0.65);
+  }
+  :root.dark .glass-strong { --glass-a: 0.1; --glass-a2: 0.035; }
+  :root.dark .glass.glass-strong {
+    background:
+      linear-gradient(150deg, rgb(255 255 255 / var(--glass-a)), rgb(255 255 255 / var(--glass-a2))),
+      rgb(var(--bg) / 0.62);
+  }
+  .glass.glass-tint-brand {
+    background:
+      linear-gradient(150deg, rgb(var(--brand) / 0.18), rgb(var(--brand) / 0.05)),
+      linear-gradient(150deg, rgb(255 255 255 / var(--glass-a)), rgb(255 255 255 / var(--glass-a2)));
+  }
+  :root.dark .glass.glass-tint-brand {
+    background:
+      linear-gradient(150deg, rgb(var(--brand) / 0.22), rgb(var(--brand) / 0.06)),
+      rgb(var(--bg) / 0.45);
+  }
+
+  /* Ambient light field behind glass pages: slow drifting colour, faint graph paper. */
+  .ambient {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    overflow: hidden;
+    pointer-events: none;
+    background-color: rgb(var(--bg));
+  }
+  .ambient-blob {
+    position: absolute;
+    width: 70vmax;
+    height: 70vmax;
+    border-radius: 9999px;
+    opacity: var(--ambient-a);
+    will-change: transform;
+  }
+  .ambient-grid {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(var(--grid-major) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-major) 1px, transparent 1px);
+    background-size: 56px 56px;
+    -webkit-mask-image: radial-gradient(ellipse 70% 55% at 50% 0%, #000 10%, transparent 75%);
+    mask-image: radial-gradient(ellipse 70% 55% at 50% 0%, #000 10%, transparent 75%);
+    opacity: 0.45;
+  }
+}
+
+@keyframes drift-a {
+  0%, 100% { transform: translate3d(-12%, -18%, 0) scale(1); }
+  50% { transform: translate3d(8%, -4%, 0) scale(1.12); }
+}
+@keyframes drift-b {
+  0%, 100% { transform: translate3d(38%, 6%, 0) scale(1.05); }
+  50% { transform: translate3d(22%, -14%, 0) scale(0.92); }
+}
+@keyframes drift-d {
+  0%, 100% { transform: translate3d(60%, 70%, 0) scale(1); }
+  50% { transform: translate3d(40%, 52%, 0) scale(1.15); }
+}
+@keyframes drift-c {
+  0%, 100% { transform: translate3d(4%, 46%, 0) scale(0.95); }
+  50% { transform: translate3d(-14%, 30%, 0) scale(1.1); }
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass { background: rgb(var(--surface) / 0.94); }
+}
+html.lite .glass,
+html.lite .glass-tint-brand {
+  background: rgb(var(--surface));
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
+  border-color: rgb(var(--rule));
+}
+html.lite .glass::before,
+html.lite .glass::after,
+html.lite .ambient-blob {
+  display: none;
 }
 
 /* Leftover bg-white in dark mode lands on the surface, not a white hole. */

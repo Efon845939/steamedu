@@ -3,7 +3,6 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-route
 import axios from 'axios';
 import './App.css';
 
-import HomePage from './components/HomePage';
 import AuthPage from './components/AuthPage';
 import NotFoundPage from './components/NotFoundPage';
 import Navbar from './components/Navbar';
@@ -12,8 +11,10 @@ import { Toaster } from './components/ui/sonner';
 import { BrandMark } from './components/lab';
 import { DisplayProvider } from './lib/theme';
 
-// Everything past the landing and login pages loads on demand, so a slow connection
-// only downloads the code for the page the student actually opens.
+// Every page past login loads on demand, so a slow connection only downloads the code
+// for the page the student actually opens. The landing is lazy too: it carries the
+// motion library for its animations, which keeps that out of the main bundle.
+const HomePage = lazy(() => import('./components/HomePage'));
 const Dashboard = lazy(() => import('./components/Dashboard'));
 const QuizPage = lazy(() => import('./components/QuizPage'));
 const ActivitiesPage = lazy(() => import('./components/ActivitiesPage'));

@@ -1,8 +1,10 @@
 # STEAM Hub design system
 
 STEAM Hub is a misconception lab. Every wrong idea is a specimen a student catches,
-labels and files. It is not a failure. The UI is flat, type does the work, each age
-theme has exactly one accent, and motion only answers what the person did.
+labels and files. It is not a failure. The look is liquid glass: translucent layers
+with a specular rim float over a slow ambient light field. Type does the work, each age
+theme has exactly one accent, and motion is generous on the landing and quick and
+purposeful inside the app.
 
 This file is the contract for anyone changing the frontend. The visual proposal it came
 from is the "STEAM Hub theme proposal" canvas.
@@ -54,10 +56,18 @@ only). `text-xs` ... `text-5xl` also map to the theme scale; the smallest text i
 `rounded-xl` (the raised strip, dialogs), `rounded-label` (4px specimen labels),
 `rounded-full` only for avatars. Graph paper is square.
 
-**Elevation**: content sits on the page separated by hairlines and whitespace.
-`surface-raised` (or `shadow-raised`) is for the ONE raised element per screen (the Next
-up strip, a side panel). `shadow-float` is for popovers, dialogs and toasts. Dark mode
-drops shadows.
+**Glass and elevation** (`src/index.css`):
+
+- `glass` is a translucent layer with a specular rim and a pointer sheen (set `--mx`,
+  `--my` on pointer move). `glass-strong` is more opaque for long text; `glass-tint-brand`
+  tints it with the accent; `glass-brand` is the primary action (accent fill, lit rim).
+- `ambient` (with `ambient-blob` and `ambient-grid`) is the drifting light field behind
+  glass pages. Glass only reads as glass over it.
+- Use glass for floating layers: the navigation bar, hero and feature panels, the one
+  raised panel of a screen, popovers and sheets. Dense data (tables, the X-ray, forms)
+  sits on `bg-surface` inside a glass frame, never directly on moving colour.
+- Lite mode and browsers without `backdrop-filter` get solid surfaces automatically.
+- `surface-raised` / `shadow-float` remain for solid layers.
 
 ## The three marks
 
@@ -89,8 +99,9 @@ absent or quiet.
   page in `<MotionScope>` from `src/lib/motion.js` and use `import * as m from
   'motion/react-m'`. Read timings with `useMotion()` from `src/lib/motion-tokens.js`
   (`mo.full`, `mo.spring`, `mo.enter`, `mo.stagger`, `mo.rise`, `mo.pin`).
-- Only lazy route pages may import `src/lib/motion.js`. App, Navbar and HomePage must
-  not (it keeps motion out of the main bundle for slow connections).
+- Only lazy route pages may import `src/lib/motion.js` (HomePage is lazy for this
+  reason). App, Navbar, AuthPage and the error pages must not: it keeps motion out of the
+  main bundle for slow connections.
 - Reduced: opacity only, 120ms. Off and lite: nothing moves. Both are handled globally;
   final states must be the no-animation state.
 
@@ -103,7 +114,8 @@ X-ray, columns fade in once per session.
 
 ## Rules
 
-- No raw palette or hex colours, no gradients, no glow, no glass/blur, no `bg-white`.
+- No raw palette or hex colours, no gradient text, no neon glow, no `bg-white`. Gradients
+  only inside glass recipes, the ambient field and short light sweeps (the X-ray scan).
 - No emoji anywhere (icons are lucide, `currentColor`, never inside coloured circles).
 - No em dashes in UI copy. No exclamation marks in success copy ("Correct. You kept
   force and motion apart."). Sentence case. No tracked all-caps eyebrows.

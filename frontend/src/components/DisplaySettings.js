@@ -191,7 +191,7 @@ const DisplaySettings = () => {
         aria-expanded={open}
         aria-controls={panelId}
         onClick={() => setOpen((o) => !o)}
-        className="inline-flex h-11 items-center gap-2 rounded-md px-3 text-sm font-semibold text-ink transition-colors hover:bg-neutral-tint"
+        className="inline-flex h-11 items-center gap-2 rounded-full px-3.5 text-sm font-semibold text-ink transition-colors hover:bg-surface/50"
         data-testid="display-settings-btn"
       >
         <SlidersHorizontal className="h-[1.1em] w-[1.1em]" aria-hidden="true" />
@@ -203,7 +203,7 @@ const DisplaySettings = () => {
           id={panelId}
           role="dialog"
           aria-labelledby={headingId}
-          className="animate-rise absolute right-0 top-[calc(100%+8px)] z-50 w-[min(26rem,calc(100vw-2rem))] rounded-xl border border-rule bg-surface p-5 shadow-float"
+          className="glass glass-strong animate-rise absolute right-0 top-[calc(100%+12px)] z-50 w-[min(26rem,calc(100vw-2rem))] rounded-2xl p-5"
         >
           <button
             type="button"

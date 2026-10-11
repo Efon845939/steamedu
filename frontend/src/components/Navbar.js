@@ -55,11 +55,9 @@ const Navbar = () => {
         to={item.to}
         aria-current={active ? 'page' : undefined}
         className={cn(
-          'inline-flex items-center whitespace-nowrap rounded-sm text-sm transition-colors',
-          mobile ? 'min-h-11 px-3' : 'h-11 px-3',
-          active
-            ? cn('font-semibold text-ink', mobile ? 'bg-brand-tint' : 'shadow-[inset_0_-2px_0_rgb(var(--brand))]')
-            : 'text-ink-muted hover:text-ink'
+          'inline-flex items-center whitespace-nowrap rounded-full text-sm transition-colors duration-enter',
+          mobile ? 'min-h-11 px-4' : 'h-10 px-3.5',
+          active ? 'bg-brand-tint/80 font-semibold text-ink' : 'text-ink-muted hover:bg-surface/50 hover:text-ink'
         )}
         data-testid={`nav-${item.to.replace('/', '') || 'home'}`}
       >
@@ -71,8 +69,8 @@ const Navbar = () => {
   const showPoints = user && user.role === 'student' && theme === '13-15';
 
   return (
-    <header className="sticky top-0 z-40 border-b border-rule bg-bg">
-      <nav aria-label="Main" className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
+    <header className="sticky top-0 z-40 px-3 pt-3">
+      <nav aria-label="Main" className="glass mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 rounded-2xl pl-4 pr-2 sm:pl-5">
         <div className="flex min-w-0 items-center gap-6">
           <Link to="/" className="rounded-sm" aria-label="STEAM Hub home">
             <Wordmark />
@@ -82,7 +80,7 @@ const Navbar = () => {
 
         <div className="hidden items-center gap-2 lg:flex">
           {showPoints && (
-            <span className="inline-flex items-baseline gap-1.5 rounded-sm border border-rule-strong px-2.5 py-1 text-sm" data-testid="navbar-points">
+            <span className="inline-flex items-baseline gap-1.5 rounded-full border border-rule-strong/60 bg-surface/50 px-3 py-1 text-sm" data-testid="navbar-points">
               <span className="t-num">{(user.points || 0).toLocaleString()}</span>
               <span className="text-ink-muted">points</span>
             </span>
@@ -103,7 +101,7 @@ const Navbar = () => {
               </Button>
             </div>
           ) : (
-            <Button asChild variant="outline" size="sm" className="ml-2">
+            <Button asChild variant="outline" size="sm" className="ml-1 rounded-full px-4">
               <Link to="/auth" data-testid="login-nav-btn">
                 Sign in
               </Link>
@@ -133,8 +131,8 @@ const Navbar = () => {
       </nav>
 
       {isMenuOpen && (
-        <div id="mobile-menu" className="border-t border-rule bg-bg lg:hidden">
-          <div className="mx-auto flex max-w-7xl flex-col gap-1 px-4 py-3 sm:px-6">
+        <div id="mobile-menu" className="glass glass-strong mx-auto mt-2 max-h-[calc(100vh-6rem)] max-w-6xl overflow-y-auto rounded-2xl animate-rise lg:hidden">
+          <div className="flex flex-col gap-1 p-3">
             {items.map((i) => renderLink(i, true))}
             <div className="mt-3 border-t border-rule pt-4">
               <DisplayPanel liteTestId="lite-mode-toggle-mobile" />
