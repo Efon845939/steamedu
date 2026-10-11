@@ -1,7 +1,8 @@
 # Test Credentials
 
-## Teacher signup code (backend/.env TEACHER_SIGNUP_CODE)
-`STEAM-TEACH-2026`
+## Teacher signup code
+Set via the `TEACHER_SIGNUP_CODE` env var (backend/.env locally, host dashboard in production).
+Never write the real value here. Tests default to `TEST-CODE`.
 
 ## Teacher (verified, demo)
 - **Username**: `teacher_demo`
