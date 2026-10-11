@@ -2,87 +2,228 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-    margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto",
-        "Oxygen", "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans",
-        "Helvetica Neue", sans-serif;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-}
-
-code {
-    font-family: source-code-pro, Menlo, Monaco, Consolas, "Courier New",
-        monospace;
-}
-
-
+/* ------------------------------------------------------------------
+   Theme tokens. Colour palettes live in tailwind.config.js; this file sets
+   the rest: surfaces, type, radius and text size per age theme
+   (html[data-age], see src/lib/theme.js).
+   ------------------------------------------------------------------ */
 
 @layer base {
   :root {
-        --background: 0 0% 100%;
-        --foreground: 0 0% 3.9%;
-        --card: 0 0% 100%;
-        --card-foreground: 0 0% 3.9%;
-        --popover: 0 0% 100%;
-        --popover-foreground: 0 0% 3.9%;
-        --primary: 0 0% 9%;
-        --primary-foreground: 0 0% 98%;
-        --secondary: 0 0% 96.1%;
-        --secondary-foreground: 0 0% 9%;
-        --muted: 0 0% 96.1%;
-        --muted-foreground: 0 0% 45.1%;
-        --accent: 0 0% 96.1%;
-        --accent-foreground: 0 0% 9%;
-        --destructive: 0 84.2% 60.2%;
-        --destructive-foreground: 0 0% 98%;
-        --border: 0 0% 89.8%;
-        --input: 0 0% 89.8%;
-        --ring: 0 0% 3.9%;
-        --chart-1: 12 76% 61%;
-        --chart-2: 173 58% 39%;
-        --chart-3: 197 37% 24%;
-        --chart-4: 43 74% 66%;
-        --chart-5: 27 87% 67%;
-        --radius: 0.5rem;
-    }
-  .dark {
-        --background: 0 0% 3.9%;
-        --foreground: 0 0% 98%;
-        --card: 0 0% 3.9%;
-        --card-foreground: 0 0% 98%;
-        --popover: 0 0% 3.9%;
-        --popover-foreground: 0 0% 98%;
-        --primary: 0 0% 98%;
-        --primary-foreground: 0 0% 9%;
-        --secondary: 0 0% 14.9%;
-        --secondary-foreground: 0 0% 98%;
-        --muted: 0 0% 14.9%;
-        --muted-foreground: 0 0% 63.9%;
-        --accent: 0 0% 14.9%;
-        --accent-foreground: 0 0% 98%;
-        --destructive: 0 62.8% 30.6%;
-        --destructive-foreground: 0 0% 98%;
-        --border: 0 0% 14.9%;
-        --input: 0 0% 14.9%;
-        --ring: 0 0% 83.1%;
-        --chart-1: 220 70% 50%;
-        --chart-2: 160 60% 45%;
-        --chart-3: 30 80% 55%;
-        --chart-4: 280 65% 60%;
-        --chart-5: 340 75% 55%;
-    }
-}
+    --font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --font-display: var(--font-body);
+    --radius-k: 1;
+    --text-k: 1;
 
+    --page: 248 250 249;          /* page background */
+    --surface: 255 255 255;       /* cards */
 
+    --background: 150 14% 98%;
+    --foreground: 222 30% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 30% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 30% 12%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 14% 96%;
+    --secondary-foreground: 222 30% 12%;
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 9% 42%;
+    --accent: 220 14% 96%;
+    --accent-foreground: 222 30% 12%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 220 13% 90%;
+    --input: 220 13% 86%;
+    --chart-1: 12 76% 61%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+    --radius: calc(0.5rem * var(--radius-k));
 
-@layer base {
+    --shadow-soft: 0 1px 2px rgb(16 24 40 / 0.04), 0 2px 8px rgb(16 24 40 / 0.04);
+    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+    color-scheme: light;
+  }
+
+  :root.dark {
+    --page: 13 17 26;
+    --surface: 20 26 38;
+
+    --background: 222 33% 8%;
+    --foreground: 220 20% 94%;
+    --card: 220 30% 11%;
+    --card-foreground: 220 20% 94%;
+    --popover: 220 30% 11%;
+    --popover-foreground: 220 20% 94%;
+    --secondary: 220 22% 17%;
+    --secondary-foreground: 220 20% 94%;
+    --muted: 220 22% 17%;
+    --muted-foreground: 220 12% 68%;
+    --accent: 220 22% 17%;
+    --accent-foreground: 220 20% 94%;
+    --destructive: 0 63% 45%;
+    --border: 220 20% 21%;
+    --input: 220 20% 26%;
+    --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.3);
+    color-scheme: dark;
+  }
+
+  /* Middle school: rounder, friendlier type, slightly larger text. */
+  :root[data-age="explorer"] {
+    --font-body: 'Nunito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --radius-k: 1.35;
+    --text-k: 1.04;
+  }
+
+  /* High school: the default look, with a geometric display face for headings. */
+  :root[data-age="lab"] {
+    --font-display: 'Space Grotesk', var(--font-body);
+  }
+
+  /* University and up: tighter corners, denser layout, quiet neutrals. */
+  :root[data-age="pro"] {
+    --radius-k: 0.6;
+    --text-k: 0.97;
+  }
+
+  :root[data-text="lg"] {
+    --text-k: 1.12;
+  }
+  :root[data-age="explorer"][data-text="lg"] {
+    --text-k: 1.16;
+  }
+
+  html {
+    font-size: calc(100% * var(--text-k));
+    -webkit-tap-highlight-color: transparent;
+  }
+
   * {
     @apply border-border;
-    }
+  }
+
   body {
-    @apply bg-background text-foreground;
-    }
+    margin: 0;
+    font-family: var(--font-body);
+    background-color: rgb(var(--page));
+    color: hsl(var(--foreground));
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+
+  h1, h2, h3 {
+    font-family: var(--font-display);
+    letter-spacing: -0.015em;
+  }
+  :root[data-age="pro"] h1,
+  :root[data-age="pro"] h2 {
+    letter-spacing: -0.025em;
+  }
+
+  ::selection {
+    background-color: rgb(var(--c-brand-200));
+    color: rgb(var(--c-brand-900));
+  }
+
+  :focus-visible {
+    outline: 2px solid rgb(var(--c-brand-500));
+    outline-offset: 2px;
+  }
+
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+}
+
+/* ------------------------------------------------------------------
+   Calm surfaces. Most pages paint a full-height gradient wash
+   ("min-h-screen bg-gradient-to-br from-emerald-50 ..."). For a quieter,
+   easier-to-read site the wash becomes the flat page colour with a faint
+   accent tint at the top only.
+   ------------------------------------------------------------------ */
+.min-h-screen[class*="bg-gradient-to-"] {
+  background-image: linear-gradient(180deg, rgb(var(--c-brand-50) / 0.7) 0, rgb(var(--page)) 22rem) !important;
+  background-color: rgb(var(--page)) !important;
+}
+
+/* Dark mode: white panels become the dark surface (text-white stays white). */
+.dark .bg-white { background-color: rgb(var(--surface)); }
+.dark .bg-white\/50 { background-color: rgb(var(--surface) / 0.5); }
+.dark .bg-white\/60 { background-color: rgb(var(--surface) / 0.6); }
+.dark .bg-white\/70 { background-color: rgb(var(--surface) / 0.7); }
+.dark .bg-white\/80 { background-color: rgb(var(--surface) / 0.8); }
+.dark .bg-white\/90 { background-color: rgb(var(--surface) / 0.9); }
+.dark .bg-white\/95 { background-color: rgb(var(--surface) / 0.95); }
+.dark .hover\:bg-gray-100:hover { background-color: rgb(var(--c-gray-100)); }
+.dark .text-black { color: hsl(var(--foreground)); }
+.dark img { filter: brightness(0.92); }
+
+/* ------------------------------------------------------------------
+   Motion. Short, eased, and only where it explains something:
+   page entry, reveal on scroll, press feedback.
+   ------------------------------------------------------------------ */
+.page-enter {
+  animation: page-in 0.35s var(--ease-out) both;
+}
+
+@keyframes page-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Reveal on scroll (hooks/use-reveal.js). Hidden only when motion is allowed,
+   so content is never stuck invisible. */
+@media (prefers-reduced-motion: no-preference) {
+  html:not(.lite):not(.calm-motion) .reveal {
+    opacity: 0;
+    transform: translateY(14px);
+    transition: opacity 0.6s var(--ease-out), transform 0.6s var(--ease-out);
+    transition-delay: var(--reveal-delay, 0ms);
+  }
+  html:not(.lite):not(.calm-motion) .reveal.is-visible {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+button:not(:disabled):active,
+a[role="button"]:active {
+  transform: translateY(0.5px) scale(0.985);
+}
+
+/* Interactive cards across the app lift a little instead of jumping. */
+.card-hover {
+  transition: transform 0.25s var(--ease-out), box-shadow 0.25s var(--ease-out);
+}
+.card-hover:hover {
+  transform: translateY(-2px);
+}
+
+/* Theme switches cross-fade colours instead of flashing. */
+html.theme-transition *,
+html.theme-transition *::before,
+html.theme-transition *::after {
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.2s ease, fill 0.3s ease !important;
+}
+
+/* Scrollbars that match the theme. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--c-gray-300)) transparent;
+}
+
+/* "Reduced motion" chosen in the theme panel: same rules as the OS setting. */
+html.calm-motion *:not(.spinner):not(.animate-spin),
+html.calm-motion *::before,
+html.calm-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
 }
 
 /* ------------------------------------------------------------------
@@ -165,13 +306,13 @@ html.lite [class*="bg-gradient-to-"] {
 /* Full-page washes become plain white. */
 html.lite .min-h-screen[class*="bg-gradient-to-"] {
   background-image: none !important;
-  background-color: #fff !important;
+  background-color: rgb(var(--page)) !important;
 }
 
 /* Gradient text (bg-clip-text + text-transparent) becomes solid text. */
 html.lite .lite-solid-text {
   background: none !important;
-  color: #047857 !important;
+  color: rgb(var(--c-brand-700)) !important;
   -webkit-text-fill-color: currentColor;
 }
 
@@ -183,7 +324,7 @@ html.lite [class*="backdrop-blur"] {
 }
 
 html.lite [class*="bg-white/"]:not([class*="text-white"]) {
-  background-color: #fff !important;
+  background-color: rgb(var(--surface)) !important;
 }
 
 /* Purely decorative nodes (never information). */
@@ -193,5 +334,61 @@ html.lite [data-decor] {
 
 /* No web font: system UI stack (Inter is not downloaded in lite mode). */
 html.lite body {
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-body: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-display: var(--font-body);
+  font-family: var(--font-body);
+}
+
+/* ------------------------------------------------------------------
+   A little flourish for the landing page: a slow-moving accent glow,
+   a faint dot grid and a staggered hero entrance. All decorative
+   (data-decor), so Lite mode drops them and reduced motion freezes them.
+   ------------------------------------------------------------------ */
+.hero-aurora {
+  position: absolute;
+  inset: 0 -5% auto -5%;
+  height: 34rem;
+  pointer-events: none;
+  background:
+    radial-gradient(40% 50% at 20% 30%, rgb(var(--c-brand-300) / 0.35), transparent 70%),
+    radial-gradient(35% 45% at 80% 20%, rgb(var(--c-brand2-300) / 0.3), transparent 70%),
+    radial-gradient(30% 40% at 55% 75%, rgb(var(--c-brand-200) / 0.3), transparent 70%);
+  filter: blur(20px);
+  animation: aurora-drift 18s ease-in-out infinite alternate;
+}
+.dark .hero-aurora {
+  opacity: 0.45;
+}
+
+@keyframes aurora-drift {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(2%, 3%, 0) scale(1.05); }
+  100% { transform: translate3d(-2%, -1%, 0) scale(1); }
+}
+
+.hero-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: radial-gradient(rgb(var(--c-gray-400) / 0.35) 1px, transparent 1px);
+  background-size: 22px 22px;
+  -webkit-mask-image: radial-gradient(70% 60% at 50% 30%, #000 30%, transparent 75%);
+  mask-image: radial-gradient(70% 60% at 50% 30%, #000 30%, transparent 75%);
+}
+
+.hero-in > * {
+  animation: page-in 0.7s var(--ease-out) both;
+}
+.hero-in > *:nth-child(2) { animation-delay: 80ms; }
+.hero-in > *:nth-child(3) { animation-delay: 160ms; }
+.hero-in > *:nth-child(4) { animation-delay: 240ms; }
+.hero-in > *:nth-child(5) { animation-delay: 320ms; }
+
+/* Accent text with a slow sheen moving across it. */
+.text-sheen {
+  background-size: 200% auto;
+  animation: sheen 6s linear infinite;
+}
+@keyframes sheen {
+  to { background-position: 200% center; }
 }

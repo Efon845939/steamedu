@@ -6,6 +6,7 @@ import { BadgeCheck, Feather } from 'lucide-react';
 import { toast } from 'sonner';
 import { firstName } from '../lib/steam';
 import { useLiteMode } from '../hooks/use-lite-mode';
+import ThemeCustomizer from './ThemeCustomizer';
 
 const Navbar = () => {
   const { user, logout } = useContext(AuthContext);
@@ -32,10 +33,10 @@ const Navbar = () => {
       onClick={handleToggleLite}
       aria-pressed={lite}
       title="Lite mode: fewer bytes, no animations — for slow connections"
-      className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-sm font-medium transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-1 ${
+      className={`inline-flex h-9 items-center gap-1.5 rounded-lg border px-2.5 text-sm font-medium transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-1 ${
         lite
           ? 'border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700'
-          : 'border-gray-300 bg-white text-gray-700 hover:border-emerald-400 hover:text-emerald-700'
+          : 'border-gray-200 bg-white text-gray-600 hover:border-emerald-300 hover:text-emerald-700'
       }`}
       data-testid={testId}
     >
@@ -59,10 +60,11 @@ const Navbar = () => {
     <Link
       to={to}
       onClick={onClick}
-      className={`nav-link px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-200 ${
+      aria-current={isActive(to) ? 'page' : undefined}
+      className={`nav-link relative px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-200 ${
         isActive(to)
-          ? 'bg-emerald-100 text-emerald-700'
-          : 'text-gray-700 hover:text-emerald-600 hover:bg-emerald-50'
+          ? 'bg-emerald-50 text-emerald-700'
+          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
       }`}
       data-testid={`nav-${to.replace('/', '') || 'home'}`}
     >
@@ -82,21 +84,24 @@ const Navbar = () => {
   );
 
   return (
-    <nav className="bg-white/95 backdrop-blur-md shadow-lg border-b border-gray-200 sticky top-0 z-50">
+    <nav className="bg-white/90 backdrop-blur-md border-b border-gray-200/80 sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
-          <Link to="/" className="flex items-center space-x-2">
-            <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-lg">S</span>
+          <Link to="/" className="group flex items-center space-x-2.5">
+            <div className="w-9 h-9 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center shadow-sm transition-transform duration-300 group-hover:rotate-[-6deg]">
+              <span className="font-display text-white font-bold text-lg">S</span>
             </div>
-            <span className="font-bold text-xl text-gray-900">STEAM Hub</span>
+            <span className="font-display font-bold text-lg tracking-tight text-gray-900">STEAM Hub</span>
           </Link>
 
           <div className="hidden md:flex items-center space-x-1">
             {links}
-            <div className="pl-3">{renderLiteToggle('lite-mode-toggle')}</div>
+            <div className="pl-3 flex items-center gap-2">
+              {renderLiteToggle('lite-mode-toggle')}
+              <ThemeCustomizer />
+            </div>
             {user ? (
-              <div className="flex items-center space-x-3 ml-6 pl-6 border-l border-gray-200">
+              <div className="flex items-center space-x-3 ml-4 pl-4 border-l border-gray-200">
                 <span className="text-sm text-gray-700 flex items-center gap-1" data-testid="navbar-user-name">
                   Welcome, {firstName(user.full_name)}!
                   {user.role === 'teacher' && user.verified && (
@@ -110,19 +115,19 @@ const Navbar = () => {
                   onClick={handleLogout}
                   variant="outline"
                   size="sm"
-                  className="border-emerald-600 text-emerald-600 hover:bg-emerald-50"
+                  className="border-gray-300 text-gray-700 hover:bg-gray-50 hover:text-gray-900"
                   data-testid="logout-btn"
                 >
                   Logout
                 </Button>
               </div>
             ) : (
-              <div className="flex items-center space-x-2 ml-6 pl-6 border-l border-gray-200">
+              <div className="flex items-center space-x-2 ml-4 pl-4 border-l border-gray-200">
                 <Link to="/auth">
                   <Button
                     variant="outline"
                     size="sm"
-                    className="border-emerald-600 text-emerald-600 hover:bg-emerald-50"
+                    className="border-gray-300 text-gray-700 hover:bg-gray-50 hover:text-gray-900"
                     data-testid="login-nav-btn"
                   >
                     Login
@@ -134,9 +139,12 @@ const Navbar = () => {
 
           <div className="md:hidden flex items-center gap-2">
             {renderLiteToggle('lite-mode-toggle-mobile')}
+            <ThemeCustomizer testId="theme-customizer-btn-mobile" />
             <button
               onClick={() => setIsMenuOpen(!isMenuOpen)}
-              className="text-gray-700 hover:text-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-500 p-2"
+              className="text-gray-700 hover:text-emerald-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 rounded-lg p-2"
+              aria-label={isMenuOpen ? 'Close menu' : 'Open menu'}
+              aria-expanded={isMenuOpen}
               data-testid="mobile-menu-btn"
             >
               <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -151,7 +159,7 @@ const Navbar = () => {
         </div>
 
         {isMenuOpen && (
-          <div className="md:hidden py-4 border-t border-gray-200">
+          <div className="md:hidden py-4 border-t border-gray-200 animate-in fade-in-0 slide-in-from-top-2 duration-200">
             <div className="flex flex-col space-y-2">
               {links}
               {user ? (
