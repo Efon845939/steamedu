@@ -4,18 +4,19 @@ import { cva } from "class-variance-authority";
 
 import { cn } from "@/lib/utils"
 
-// Primary = the theme accent with its own text colour (dark text on the 13-15 pink).
-// Default height is 44px, the touch target minimum. One primary button per view.
+// Liquid glass buttons. Primary = the theme accent, lit from above, with its own text
+// colour (dark text on the 13-15 pink); outline = a clear glass pill. Default height is
+// 44px, the touch target minimum. One primary button per view.
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-semibold transition-[background-color,border-color,color,filter,transform] duration-press ease-enter active:scale-[0.98] disabled:pointer-events-none disabled:opacity-45 [&_svg]:pointer-events-none [&_svg]:size-[1.1em] [&_svg]:shrink-0",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full text-sm font-semibold transition-[background-color,border-color,color,filter,transform] duration-press ease-enter active:scale-[0.98] disabled:pointer-events-none disabled:opacity-45 [&_svg]:pointer-events-none [&_svg]:size-[1.1em] [&_svg]:shrink-0",
   {
     variants: {
       variant: {
-        default: "bg-brand text-on-brand hover:brightness-[1.06]",
+        default: "glass-brand hover:brightness-[1.06]",
         destructive: "bg-danger text-on-danger hover:brightness-110",
-        outline: "border border-rule-strong bg-transparent text-ink hover:bg-surface",
+        outline: "glass text-ink",
         secondary: "bg-neutral-tint text-ink hover:bg-neutral-200",
-        ghost: "text-ink hover:bg-neutral-tint",
+        ghost: "text-ink hover:bg-surface/55",
         link: "text-brand-ink underline-offset-4 hover:underline active:scale-100",
       },
       size: {

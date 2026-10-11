@@ -11,7 +11,7 @@ import { notifyNewBadges } from '../lib/badges';
 import { cn } from '../lib/utils';
 import { useAgeTheme } from '../lib/theme';
 import { misconceptionName } from '../lib/misconceptions';
-import { SpecimenLabel, StatusWord, Trace } from './lab';
+import { SpecimenLabel, StatusWord, Trace, onSheen } from './lab';
 
 // Quiz screen in English or Turkish. Only text changes: the answer sent to the server is always the
 // English option at the same index, so grading and misconception tags stay identical in both languages.
@@ -162,7 +162,7 @@ const groupIdeas = (result) => {
 };
 
 const LangToggle = ({ lang, onChange }) => (
-  <div className="inline-flex rounded-sm border border-rule-strong p-0.5" role="group" aria-label="Language / Dil">
+  <div className="glass inline-flex rounded-full p-1" role="group" aria-label="Language / Dil">
     {['tr', 'en'].map((code) => (
       <button
         key={code}
@@ -171,7 +171,7 @@ const LangToggle = ({ lang, onChange }) => (
         onClick={() => onChange(code)}
         aria-pressed={lang === code}
         className={cn(
-          'h-9 min-w-[2.75rem] rounded-[3px] px-2.5 text-sm font-semibold transition-colors duration-press',
+          'h-9 min-w-[2.75rem] rounded-full px-3 text-sm font-semibold transition-colors duration-press',
           lang === code ? 'bg-brand-tint text-ink' : 'text-ink-muted hover:text-ink'
         )}
         data-testid={`quiz-lang-${code}`}
@@ -383,7 +383,7 @@ const QuizPage = () => {
         </header>
 
         {review.levels && (
-          <section aria-labelledby="trace-title" className="mt-8 border-y border-rule py-5">
+          <section aria-labelledby="trace-title" className="glass glass-strong mt-8 rounded-[24px] p-5 sm:p-6">
             <h2 id="trace-title" className="t-cap font-sans font-normal">{r.traceTitle}</h2>
             <div className="relative mt-3" style={{ height: 72 }}>
               <span aria-hidden="true" className="absolute inset-x-0 top-[22%] border-t border-dashed border-rule" />
@@ -399,7 +399,7 @@ const QuizPage = () => {
         )}
 
         {ideas.length > 0 && (
-          <section aria-labelledby="ideas-title" className="mt-10">
+          <section aria-labelledby="ideas-title" className="glass glass-strong mt-6 rounded-[24px] p-5 sm:p-6">
             <div className="border-b border-rule pb-3">
               <h2 id="ideas-title" className="t-h3">{r.ideasTitle}</h2>
               <p className="t-cap mt-1">{r.ideasNote}</p>
@@ -439,7 +439,7 @@ const QuizPage = () => {
         )}
 
         {showAnswers && (
-          <section aria-labelledby="answers-title" className="mt-10">
+          <section aria-labelledby="answers-title" className="glass glass-strong mt-6 rounded-[24px] p-5 sm:p-6">
             <h2 id="answers-title" className="t-h3 border-b border-rule pb-3">{r.answersTitle}</h2>
             <ol>
               {review.rows.map((row) => {
@@ -543,12 +543,12 @@ const QuizPage = () => {
           </div>
         </header>
 
-        <div key={currentQuestion} className="animate-rise">
+        <div key={currentQuestion} className="glass glass-strong animate-question mt-6 rounded-[28px] p-5 sm:p-8" onPointerMove={onSheen}>
           <h2
             id="quiz-question"
             lang={qLang}
             className={cn(
-              'mt-8 text-pretty',
+              'text-pretty',
               ageTheme === '18+' ? 't-h3' : 'font-sans text-xl font-semibold leading-snug tracking-normal'
             )}
             data-testid="question-text"
@@ -566,18 +566,18 @@ const QuizPage = () => {
                   onClick={() => handleAnswerSelect(option)}
                   aria-pressed={selected}
                   className={cn(
-                    'grid min-h-14 w-full grid-cols-[auto_minmax(0,1fr)] items-center gap-3.5 rounded-md border bg-surface py-2.5 pl-3 pr-4 text-left',
-                    'transition-[border-color,background-color,color,box-shadow] duration-press',
+                    'grid min-h-14 w-full grid-cols-[auto_minmax(0,1fr)] items-center gap-3.5 rounded-2xl border py-2.5 pl-3 pr-4 text-left',
+                    'transition-[border-color,background-color,color,box-shadow,transform] duration-enter ease-spring active:scale-[0.99]',
                     selected
-                      ? 'border-brand-ink bg-brand-tint ring-1 ring-inset ring-brand-ink'
-                      : 'border-rule-strong hover:border-ink'
+                      ? 'scale-[1.01] border-brand-ink bg-brand-tint/90 shadow-[0_10px_30px_-14px_rgb(var(--brand)/0.7)] ring-1 ring-inset ring-brand-ink'
+                      : 'border-rule-strong/50 bg-surface/55 hover:-translate-y-0.5 hover:border-rule-strong hover:bg-surface/80'
                   )}
                   data-testid={`option-${index}`}
                 >
                   <span
                     aria-hidden="true"
                     className={cn(
-                      'grid h-8 w-8 place-items-center rounded-sm border text-sm font-semibold',
+                      'grid h-8 w-8 place-items-center rounded-xl border text-sm font-semibold',
                       selected ? 'border-brand-ink text-brand-ink' : 'border-rule-strong text-ink-muted'
                     )}
                   >
@@ -602,7 +602,7 @@ const QuizPage = () => {
                     aria-pressed={currentConfidence === value}
                     onClick={() => handleConfidence(value)}
                     className={cn(
-                      'h-11 rounded-sm border px-4 text-sm transition-[border-color,background-color] duration-press',
+                      'h-11 rounded-full border px-5 text-sm transition-[border-color,background-color] duration-press',
                       currentConfidence === value
                         ? 'border-brand-ink bg-brand-tint font-semibold text-ink'
                         : 'border-rule-strong text-ink hover:bg-surface'
@@ -618,7 +618,7 @@ const QuizPage = () => {
           </div>
         )}
 
-        <div className="sticky bottom-0 z-10 -mx-4 mt-8 border-t border-rule bg-bg px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:mx-0 sm:px-0">
+        <div className="glass sticky bottom-3 z-10 mb-[max(0.75rem,env(safe-area-inset-bottom))] mt-5 rounded-[22px] px-3 py-2.5 sm:px-4">
           <div className="flex items-center justify-between gap-3">
             <p className="t-cap hidden min-w-0 flex-1 sm:block" aria-live="polite" lang={qLang}>{barText}</p>
             <div className="ml-auto flex items-center gap-2">
@@ -666,7 +666,8 @@ const QuizPage = () => {
         <section
           key={quiz.id}
           aria-labelledby={`featured-${quiz.id}`}
-          className="surface-raised mt-8 flex flex-wrap items-center justify-between gap-x-6 gap-y-4 px-5 py-5 sm:px-6"
+          className="glass glass-tint-brand animate-question mt-8 flex flex-wrap items-center justify-between gap-x-6 gap-y-4 rounded-[26px] px-6 py-6 sm:px-8"
+          onPointerMove={onSheen}
         >
           <div className="min-w-0 max-w-2xl">
             <p className="t-cap tnum">Diagnostic, {quiz.subject}, {quiz.questions.length} questions</p>
@@ -688,7 +689,7 @@ const QuizPage = () => {
       ))}
 
       <section aria-labelledby="quiz-list-title" className="mt-10">
-        <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3 border-b border-rule pb-3">
+        <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
           <h2 id="quiz-list-title" className="t-h3">{featured.length ? 'Practice quizzes' : 'All quizzes'}</h2>
           <div className="flex w-full items-center gap-3 sm:w-auto">
             <span id="quiz-subject-label" className="t-cap shrink-0">Subject</span>
@@ -719,13 +720,13 @@ const QuizPage = () => {
         ) : rest.length === 0 ? (
           <p className="t-cap border-b border-rule py-6">Only the diagnostic above matches this subject.</p>
         ) : (
-          <ul>
+          <ul className="glass glass-strong mt-4 overflow-hidden rounded-[24px] px-3 py-1">
             {rest.map((quiz) => (
-              <li key={quiz.id} className="border-b border-rule">
+              <li key={quiz.id} className="border-b border-rule/60 last:border-b-0">
                 <button
                   type="button"
                   onClick={() => startQuiz(quiz)}
-                  className="group -mx-3 grid w-[calc(100%+1.5rem)] grid-cols-[minmax(0,1fr)_auto] items-center gap-x-6 rounded-md px-3 py-4 text-left transition-colors duration-press hover:bg-neutral-tint"
+                  className="group grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-6 rounded-2xl px-4 py-4 text-left transition-colors duration-press hover:bg-surface/60"
                   data-testid={`start-quiz-${quiz.id}`}
                 >
                   <span className="min-w-0">

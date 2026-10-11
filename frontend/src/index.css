@@ -587,6 +587,16 @@ html.lite [data-decor] {
   }
 }
 
+/* A question or panel arriving: rises out of a soft blur. */
+@keyframes blur-rise {
+  from { opacity: 0; transform: translateY(var(--travel)); filter: blur(8px); }
+  to { opacity: 1; transform: none; filter: none; }
+}
+.animate-question {
+  animation: blur-rise 460ms var(--ease-enter) both;
+}
+:root[data-motion="reduced"] .animate-question { animation-name: fade; }
+
 @keyframes drift-a {
   0%, 100% { transform: translate3d(-12%, -18%, 0) scale(1); }
   50% { transform: translate3d(8%, -4%, 0) scale(1.12); }
