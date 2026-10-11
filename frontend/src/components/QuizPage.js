@@ -11,6 +11,30 @@ import { toast } from 'sonner';
 import { SUBJECTS, subjectEmoji, subjectBadgeColor } from '../lib/steam';
 import { notifyNewBadges } from '../lib/badges';
 
+// Quiz screen in English or Turkish. Only text changes: the answer sent to the server is always the
+// English option at the same index, so grading and misconception tags stay identical in both languages.
+const QUIZ_LANG_KEY = 'steamhub:quiz-lang';
+const UI_TEXT = {
+  en: {
+    question: (n, total) => `Question ${n} of ${total}`, previous: 'Previous', exit: 'Exit Quiz',
+    next: 'Next Question', submit: 'Submit Quiz', sureQ: 'How sure are you?', sure: "I'm sure",
+    guess: 'I guessed', sureHint: 'Be honest: a guess is not counted as a wrong idea.',
+  },
+  tr: {
+    question: (n, total) => `Soru ${n} / ${total}`, previous: 'Geri', exit: 'Testten çık',
+    next: 'Sonraki soru', submit: 'Testi bitir', sureQ: 'Ne kadar eminsin?', sure: 'Eminim',
+    guess: 'Tahmin ettim', sureHint: 'Dürüst ol: tahminler yanlış fikir olarak sayılmaz.',
+  },
+};
+
+const initialQuizLang = () => {
+  try {
+    const stored = window.localStorage.getItem(QUIZ_LANG_KEY);
+    if (stored === 'en' || stored === 'tr') return stored;
+  } catch (e) { /* storage blocked: fall back to the browser language */ }
+  return (navigator.language || '').toLowerCase().startsWith('tr') ? 'tr' : 'en';
+};
+
 const QuizPage = () => {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
@@ -25,6 +49,12 @@ const QuizPage = () => {
   const [showResults, setShowResults] = useState(false);
   const [quizResult, setQuizResult] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [lang, setLangState] = useState(initialQuizLang);
+
+  const setLang = (value) => {
+    setLangState(value);
+    try { window.localStorage.setItem(QUIZ_LANG_KEY, value); } catch (e) { /* not critical */ }
+  };
 
   const fetchQuizzes = useCallback(async () => {
     try {
@@ -60,7 +90,15 @@ const QuizPage = () => {
 
   const handleAnswerSelect = (selectedOption) => {
     const newAnswers = [...answers];
-    newAnswers[currentQuestion] = { question_index: currentQuestion, selected: selectedOption };
+    // Picking another option clears the confidence answer, so it always belongs to the option on screen
+    const keep = newAnswers[currentQuestion]?.selected === selectedOption ? newAnswers[currentQuestion].confident : undefined;
+    newAnswers[currentQuestion] = { question_index: currentQuestion, selected: selectedOption, confident: keep };
+    setAnswers(newAnswers);
+  };
+
+  const handleConfidence = (confident) => {
+    const newAnswers = [...answers];
+    newAnswers[currentQuestion] = { ...newAnswers[currentQuestion], confident };
     setAnswers(newAnswers);
   };
 
@@ -172,16 +210,43 @@ const QuizPage = () => {
     const progress = ((currentQuestion + 1) / selectedQuiz.questions.length) * 100;
     const question = selectedQuiz.questions[currentQuestion];
     const currentAnswer = answers[currentQuestion]?.selected;
+    const currentConfidence = answers[currentQuestion]?.confident;
+    // Diagnostic quizzes ask "sure or guessing?" so a lucky or random click doesn't read as a misconception
+    const asksConfidence = Boolean(selectedQuiz.diagnostic);
+    const hasTurkish = Boolean(question.tr?.question);
+    const showTr = hasTurkish && lang === 'tr';
+    const t = UI_TEXT[hasTurkish ? lang : 'en'];
+    const canContinue = Boolean(currentAnswer) && (!asksConfidence || typeof currentConfidence === 'boolean');
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 pt-8">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="mb-8">
             <div className="flex items-center justify-between mb-4">
-              <h1 className="text-2xl font-bold text-gray-900">{selectedQuiz.title}</h1>
-              <Badge variant="outline" data-testid="question-counter">
-                Question {currentQuestion + 1} of {selectedQuiz.questions.length}
-              </Badge>
+              <h1 className="text-2xl font-bold text-gray-900">
+                {showTr && selectedQuiz.tr?.title ? selectedQuiz.tr.title : selectedQuiz.title}
+              </h1>
+              <div className="flex items-center gap-2">
+                {hasTurkish && (
+                  <div className="flex rounded-md border border-gray-300 text-xs" role="group" aria-label="Language / Dil">
+                    {['tr', 'en'].map((code) => (
+                      <button
+                        key={code}
+                        type="button"
+                        onClick={() => setLang(code)}
+                        aria-pressed={lang === code}
+                        className={`px-2 py-1 font-semibold ${lang === code ? 'bg-emerald-600 text-white' : 'bg-white text-gray-700'}`}
+                        data-testid={`quiz-lang-${code}`}
+                      >
+                        {code.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <Badge variant="outline" data-testid="question-counter">
+                  {t.question(currentQuestion + 1, selectedQuiz.questions.length)}
+                </Badge>
+              </div>
             </div>
             <Progress value={progress} className="h-3" />
           </div>
@@ -189,7 +254,7 @@ const QuizPage = () => {
           <Card className="bg-white/90 backdrop-blur-sm shadow-xl mb-6">
             <CardHeader>
               <CardTitle className="text-xl text-gray-900" data-testid="question-text">
-                {question.question}
+                {showTr ? question.tr.question : question.question}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -211,29 +276,51 @@ const QuizPage = () => {
                       }`}>
                         {currentAnswer === option && <div className="w-3 h-3 bg-white rounded-full"></div>}
                       </div>
-                      <span className="text-lg">{option}</span>
+                      <span className="text-lg">{showTr ? (question.tr.options?.[index] || option) : option}</span>
                     </div>
                   </button>
                 ))}
               </div>
+              {asksConfidence && currentAnswer && (
+                <div className="mt-5 rounded-lg border border-gray-200 bg-gray-50 p-3" data-testid="confidence-check">
+                  <p className="text-sm font-semibold text-gray-800">{t.sureQ}</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {[[true, t.sure], [false, t.guess]].map(([value, label]) => (
+                      <Button
+                        key={String(value)}
+                        type="button"
+                        size="sm"
+                        variant={currentConfidence === value ? 'default' : 'outline'}
+                        aria-pressed={currentConfidence === value}
+                        onClick={() => handleConfidence(value)}
+                        className={currentConfidence === value ? 'bg-emerald-600 hover:bg-emerald-700' : ''}
+                        data-testid={`confidence-${value ? 'sure' : 'guess'}`}
+                      >
+                        {label}
+                      </Button>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-xs text-gray-500">{t.sureHint}</p>
+                </div>
+              )}
             </CardContent>
           </Card>
 
           <div className="flex justify-between">
             <Button onClick={previousQuestion} disabled={currentQuestion === 0} variant="outline" data-testid="previous-question-btn">
-              Previous
+              {t.previous}
             </Button>
             <div className="flex space-x-3">
               <Button onClick={restartQuiz} variant="outline" data-testid="exit-quiz-btn">
-                Exit Quiz
+                {t.exit}
               </Button>
               <Button
                 onClick={nextQuestion}
-                disabled={!currentAnswer}
+                disabled={!canContinue}
                 className="bg-emerald-600 hover:bg-emerald-700"
                 data-testid="next-question-btn"
               >
-                {currentQuestion === selectedQuiz.questions.length - 1 ? 'Submit Quiz' : 'Next Question'}
+                {currentQuestion === selectedQuiz.questions.length - 1 ? t.submit : t.next}
               </Button>
             </div>
           </div>

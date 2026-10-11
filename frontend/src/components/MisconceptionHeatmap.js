@@ -19,6 +19,11 @@ const initials = (name) => {
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 };
 
+// Teachers in the Turkish class trial read the misconception in Turkish under the English line
+const TurkishLine = ({ text }) => (text
+  ? <span lang="tr" className="block break-words text-xs font-normal italic opacity-80">{text}</span>
+  : null);
+
 const worksheetLink = (tag) => `/arena/worksheet?tag=${encodeURIComponent(tag)}`;
 
 // Same glyphs in the table and the legend, so the meaning never depends on colour alone
@@ -220,6 +225,7 @@ export const MisconceptionHeatmap = () => {
                           <p className="break-words">
                             {pct(a.rate)}% of tested students ({a.holding_count} of {a.tested_count}) hold: {a.description}
                           </p>
+                          <TurkishLine text={a.description_tr} />
                         </div>
                       </div>
                       <Button
@@ -329,6 +335,7 @@ export const MisconceptionHeatmap = () => {
                                   : <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" aria-hidden="true" />}
                                 <span className="min-w-0">
                                   <span className="block break-words text-xs font-medium text-gray-900 sm:text-sm">{c.description}</span>
+                                  <TurkishLine text={c.description_tr} />
                                   <span className="block text-xs text-gray-600" aria-hidden="true">
                                     {c.holding_count}/{c.tested_count} · {pct(c.rate)}%
                                   </span>
@@ -399,6 +406,7 @@ export const MisconceptionHeatmap = () => {
                         <div className="mb-1 flex flex-col gap-0.5 text-xs sm:flex-row sm:items-baseline sm:justify-between sm:gap-3">
                           <span className="break-words font-medium text-gray-900">
                             {subjectEmoji(m.subject)} {m.description}
+                            <TurkishLine text={m.description_tr} />
                           </span>
                           <span className="shrink-0 text-gray-600">
                             {m.holding_count} of {m.tested_count} tested students ({share}%)
