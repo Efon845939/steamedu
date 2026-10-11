@@ -1,9 +1,11 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import DuplicateKeyError
+import csv
+import io
 import os
 import random
 import re
@@ -1482,11 +1484,13 @@ def _question_tags(question: dict) -> set:
     return set((question.get("misconceptions") or {}).values())
 
 
-@api_router.get("/teacher/diagnostics")
-async def get_class_diagnostics(include_peer: bool = True, current_user: User = Depends(require_teacher)):
+async def _class_evidence(teacher_id: str, include_peer: bool = True,
+                          since: Optional[str] = None, until: Optional[str] = None) -> dict:
+    """Which students were tested on, and showed, each misconception. since/until limit it to records
+    completed in [since, until), so a pilot report can compare before and after a lesson."""
     # No caps: a capped, unsorted read silently drops records (often the newest) and skews the class picture.
     # Every query is scoped to this teacher's own roster.
-    students = await db.users.find({"teacher_id": current_user.id}, {"_id": 0, "id": 1, "full_name": 1}).to_list(None)
+    students = await db.users.find({"teacher_id": teacher_id}, {"_id": 0, "id": 1, "full_name": 1}).to_list(None)
     names = {s["id"]: s["full_name"] for s in students}
     ids = list(names)
     fields = {"_id": 0, "misconceptions": 1, "completed_at": 1}
@@ -1498,6 +1502,16 @@ async def get_class_diagnostics(include_peer: bool = True, current_user: User = 
     contest_entries = await db.tournament_entries.find(
         {"student_id": {"$in": ids}, "score": {"$ne": None}},
         {**fields, "student_id": 1, "tournament_id": 1, "answers": 1}).to_list(None)
+    if since or until:  # a pilot report reads one time window; ISO timestamps compare correctly as strings
+        def in_window(r):
+            at = str(r.get("completed_at") or "")
+            return bool(at) and (not since or at >= since) and (not until or at < until)
+        # A challenge already answered before the window revealed its flawed step, so a later retry proves nothing
+        seen = {(r["user_id"], r["challenge_id"]) for r in arena_attempts if r.get("selected_step") is not None
+                and since and str(r.get("completed_at") or "") < since}
+        quiz_attempts = [r for r in quiz_attempts if in_window(r)]
+        arena_attempts = [r for r in arena_attempts if in_window(r) and (r["user_id"], r["challenge_id"]) not in seen]
+        contest_entries = [r for r in contest_entries if in_window(r)]
 
     challenges = {c["id"]: c for c in await db.arena_challenges.find(
         {"id": {"$in": list({a["challenge_id"] for a in arena_attempts})}},
@@ -1573,6 +1587,19 @@ async def get_class_diagnostics(include_peer: bool = True, current_user: User = 
     assessed |= {r["student_id"] for r in contest_entries if r["tournament_id"] in diagnostic_contest_ids}
     assessed |= set().union(*holding.values()) if holding else set()
 
+    return {"students": students, "names": names, "tested": tested, "holding": holding,
+            "occurrences": occurrences, "peer_occurrences": peer_occurrences, "assessed": assessed,
+            "records": {"quiz_attempts": len(quiz_attempts), "arena_attempts": len(arena_attempts),
+                        "contest_entries": len(contest_entries)},
+            "active": {r["user_id"] for r in quiz_attempts + arena_attempts} | {r["student_id"] for r in contest_entries}}
+
+
+@api_router.get("/teacher/diagnostics")
+async def get_class_diagnostics(include_peer: bool = True, current_user: User = Depends(require_teacher)):
+    ev = await _class_evidence(current_user.id, include_peer)
+    students, names, assessed = ev["students"], ev["names"], ev["assessed"]
+    tested, holding, occurrences, peer_occurrences = ev["tested"], ev["holding"], ev["occurrences"], ev["peer_occurrences"]
+
     def row(tag):
         t, h = tested.get(tag, set()), holding.get(tag, set())
         return {**_misconception_info(tag), "students": len(h), "occurrences": occurrences.get(tag, 0),
@@ -1603,6 +1630,118 @@ async def get_class_diagnostics(include_peer: bool = True, current_user: User = 
             "roster": roster, "misconceptions": misconceptions, "concepts": concepts, "alerts": alerts,
             "alert_rule": {"min_tested": DIAG_ALERT_MIN_TESTED, "min_holding": DIAG_ALERT_MIN_HOLDING,
                            "red_rate": DIAG_ALERT_RED_RATE, "watch_rate": DIAG_ALERT_WATCH_RATE}}
+
+
+# ---------------- Pilot report ----------------
+# Students are minors, so the report is class-level only: no names, no ids, and any count drawn from fewer
+# than PILOT_MIN_CELL students is withheld, since "1 of 2 holds it" points at a child the class can name.
+PILOT_MIN_CELL = 5
+
+
+def _pilot_date(value: Optional[str], name: str) -> Optional[str]:
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value).isoformat()
+    except ValueError:
+        raise HTTPException(status_code=422, detail=f"{name} must be a date like 2026-10-20")
+
+
+def _pilot_cell(tested: set, holding: set) -> dict:
+    if len(tested) < PILOT_MIN_CELL:
+        return {"tested": len(tested), "holding": None, "rate": None}
+    return {"tested": len(tested), "holding": len(holding), "rate": round(len(holding) / len(tested), 2)}
+
+
+def _csv_blank(value):
+    return f"<{PILOT_MIN_CELL}" if value is None else value
+
+
+def _pilot_window(ev: dict) -> dict:
+    return {"active_students": len(ev["active"]), "assessed_students": len(ev["assessed"]), **ev["records"]}
+
+
+@api_router.get("/teacher/pilot-report")
+async def get_pilot_report(start: Optional[str] = None, split: Optional[str] = None, end: Optional[str] = None,
+                           format: str = "json", current_user: User = Depends(require_teacher)):
+    """Anonymized class report for a pilot: misconception rates before and after `split` (the day the
+    teacher re-taught), plus participation. Dates are UTC days; `end` is exclusive."""
+    start, split, end = _pilot_date(start, "start"), _pilot_date(split, "split"), _pilot_date(end, "end")
+    if start and end and start >= end:
+        raise HTTPException(status_code=422, detail="start must be before end")
+    if split and ((start and split <= start) or (end and split >= end)):
+        raise HTTPException(status_code=422, detail="split must fall between start and end")
+    if format not in ("json", "csv"):
+        raise HTTPException(status_code=422, detail="format must be json or csv")
+
+    whole = await _class_evidence(current_user.id, since=start, until=end)
+    before = await _class_evidence(current_user.id, since=start, until=split) if split else None
+    after = await _class_evidence(current_user.id, since=split, until=end) if split else None
+
+    rows = []
+    for tag in sorted(whole["tested"], key=lambda t: (MISCONCEPTIONS.get(t, {}).get("subject") or "", t)):
+        row = {**_misconception_info(tag),
+               "overall": _pilot_cell(whole["tested"].get(tag, set()), whole["holding"].get(tag, set()))}
+        if split:
+            bt, bh = before["tested"].get(tag, set()), before["holding"].get(tag, set())
+            at, ah = after["tested"].get(tag, set()), after["holding"].get(tag, set())
+            both = bt & at  # same students measured on both sides, so a changed class mix can't fake progress
+            row["before"], row["after"] = _pilot_cell(bt, bh), _pilot_cell(at, ah)
+            row["paired"] = ({"students": len(both), "held_before": None, "held_after": None,
+                              "fixed": None, "newly_holding": None} if len(both) < PILOT_MIN_CELL else
+                             {"students": len(both), "held_before": len(both & bh), "held_after": len(both & ah),
+                              "fixed": len((both & bh) - ah), "newly_holding": len((both & ah) - bh)})
+        rows.append(row)
+
+    report = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "window": {"start": start, "split": split, "end": end},
+        "min_cell_size": PILOT_MIN_CELL,
+        "participation": {"students_enrolled": len(whole["students"]), "overall": _pilot_window(whole),
+                          "before": _pilot_window(before) if split else None,
+                          "after": _pilot_window(after) if split else None},
+        "misconceptions": rows,
+        "definitions": {
+            "tested": "students who answered at least one question or Debug Arena challenge that can reveal this misconception",
+            "holding": "tested students whose answer showed the misconception (a quiz retake that fixes it clears it)",
+            "rate": "holding / tested",
+            "paired": "only students tested both before and after split; fixed = held before, not after",
+            "withheld": f"counts from fewer than {PILOT_MIN_CELL} students are null (\"<{PILOT_MIN_CELL}\" in CSV) to protect students",
+        },
+    }
+    if format == "json":
+        return report
+
+    out = io.StringIO()
+    w = csv.writer(out)
+    w.writerow(["steamedu pilot report (anonymized, class level)"])
+    w.writerow(["window_start", start or "", "split", split or "", "window_end", end or ""])
+    w.writerow(["students_enrolled", report["participation"]["students_enrolled"]])
+    w.writerow([])
+    w.writerow(["period", "active_students", "assessed_students", "quiz_attempts", "arena_attempts", "contest_entries"])
+    for period in ("overall", "before", "after"):
+        p = report["participation"][period]
+        if p:
+            w.writerow([period, p["active_students"], p["assessed_students"], p["quiz_attempts"],
+                        p["arena_attempts"], p["contest_entries"]])
+    w.writerow([])
+    head = ["tag", "subject", "description", "overall_tested", "overall_holding", "overall_rate"]
+    if split:
+        head += ["before_tested", "before_holding", "before_rate", "after_tested", "after_holding", "after_rate",
+                 "paired_students", "paired_held_before", "paired_held_after", "paired_fixed", "paired_newly_holding"]
+    w.writerow(head)
+    for r in rows:
+        line = [r["tag"], r["subject"] or "", r["description"]]
+        for period in ("overall", "before", "after") if split else ("overall",):
+            line += [_csv_blank(r[period][k]) for k in ("tested", "holding", "rate")]
+        if split:
+            line += [_csv_blank(r["paired"][k]) for k in ("students", "held_before", "held_after", "fixed", "newly_holding")]
+        w.writerow(line)
+    w.writerow([])
+    w.writerow([f"<{PILOT_MIN_CELL}: fewer than {PILOT_MIN_CELL} students, withheld to protect students."])
+    name = f"steamedu-pilot-report-{(start or 'all')}-to-{(end or 'now')}.csv"
+    return Response(content=out.getvalue(), media_type="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
 # ---------------- Stats ----------------

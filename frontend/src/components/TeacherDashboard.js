@@ -16,6 +16,7 @@ import { SUBJECTS, AGE_GROUPS, formatApiError } from '../lib/steam';
 import { BadgeCheck, Trophy, Users, Search, UserPlus, Printer } from 'lucide-react';
 import { TeacherAnnouncements } from './TeacherAnnouncements';
 import { MisconceptionHeatmap } from './MisconceptionHeatmap';
+import { PilotReport } from './PilotReport';
 import { ScenarioReviewQueue } from './ScenarioReviewQueue';
 
 const TeacherDashboard = ({ stats, refreshStats }) => {
@@ -237,6 +238,11 @@ const TeacherDashboard = ({ stats, refreshStats }) => {
         {/* What the class misunderstands, not what it scored */}
         <div className="mb-8">
           <MisconceptionHeatmap />
+        </div>
+
+        {/* Anonymized before/after export for a classroom pilot */}
+        <div className="mb-8">
+          <PilotReport />
         </div>
 
         {/* Action buttons */}
